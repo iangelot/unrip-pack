@@ -1,0 +1,11 @@
+export declare const CONFIG: {
+    SOLANA_RPC_URL: string;
+    CARDS_MINT_ADDRESS: string;
+    USDC_MINT_ADDRESS: string;
+    COLLECTOR_CRYPT_PROGRAM_ID: string;
+    COLLECTOR_TREASURY_WALLET: string;
+    PAYBOX_DEFAULT_SLIPPAGE_BPS: number;
+    PAYBOX_MAX_AUTONOMOUS_USD: number;
+    JUPITER_PRICE_API: string;
+    JUPITER_QUOTE_API: string;
+};

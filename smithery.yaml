@@ -1,0 +1,24 @@
+# Smithery.ai Registry Configuration for Collector Crypt PayBox Plugin
+startCommand:
+  type: stdio
+  config:
+    command: npx
+    args:
+      - "-y"
+      - "paybox-collectorcrypt-plugin"
+remoteConnection:
+  type: sse
+  endpoint: "/sse"
+metadata:
+  name: collector-crypt-paybox-plugin
+  displayName: "Collector Crypt RWA Vault for PayBox"
+  description: "Browse vaulted physical cards (Pokemon, Sports), buy Gacha mystery packs, borrow USDC against slabs, and swap $CARDS on Solana using PayBox non-custodial wallet."
+  icon: "https://collectorcrypt.com/favicon.ico"
+  tags:
+    - web3
+    - solana
+    - paybox
+    - rwa
+    - collectibles
+    - pokemon
+    - defi

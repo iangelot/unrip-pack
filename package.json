@@ -1,0 +1,38 @@
+{
+  "name": "paybox-collectorcrypt-plugin",
+  "version": "1.0.0",
+  "description": "Model Context Protocol (MCP) plugin connecting PayBox non-custodial wallet with Collector Crypt Solana RWA vault",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "start:http": "node dist/index.js --http",
+    "dev": "tsx src/index.ts",
+    "dev:http": "tsx src/index.ts --http",
+    "test:client": "tsx src/test-client.ts",
+    "audit:ui": "tsx src/open-auditor.ts"
+  },
+  "keywords": ["mcp", "model-context-protocol", "paybox", "collector-crypt", "solana", "web3", "rwa"],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bin": {
+    "paybox-collectorcrypt-plugin": "./dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@solana/spl-token": "^0.4.15",
+    "@solana/web3.js": "^1.99.0",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.8",
+    "express": "^5.3.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.5",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
+  }
+}

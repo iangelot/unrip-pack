@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: paybox-collectorcrypt-mcp
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm run start:http
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MODE
+        value: http
+      - key: PORT
+        value: 10000
+      - key: SOLANA_RPC_URL
+        value: https://api.mainnet-beta.solana.com
+      - key: CARDS_MINT_ADDRESS
+        value: CARDSccUMFKoPRZxt5vt3ksUbxEFEcnZ3H2pd3dKxYjp
+      - key: USDC_MINT_ADDRESS
+        value: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
