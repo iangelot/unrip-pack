@@ -52,18 +52,33 @@ export function startHttpServer(port: number = 3000) {
   // Active legacy SSE transports
   const sseTransports: Record<string, SSEServerTransport> = {};
 
+  // Registered OAuth clients (pre-configured static client + dynamic clients)
+  interface RegisteredClient {
+    clientId: string;
+    clientName: string;
+    redirectUris: string[];
+  }
+  const registeredClients = new Map<string, RegisteredClient>();
+  registeredClients.set("claude-connector", {
+    clientId: "claude-connector",
+    clientName: "Claude AI Custom Connector",
+    redirectUris: ["https://claude.ai/api/mcp/auth_callback"]
+  });
+
   // Health check endpoint
   app.get("/health", (_req: Request, res: Response) => {
     res.json({
       status: "healthy",
       service: "collector-crypt-paybox-mcp",
       version: "1.0.0",
-      auth: "OAuth 2.1 + Agent Wallet Session",
+      auth: "OAuth 2.1 (RFC 7591 Dynamic Client Registration + Web3 Agent Wallet)",
+      staticClientId: "claude-connector",
       endpoints: {
         streamableHttp: "/mcp",
         legacySse: "/sse",
         oauthAuthorize: "/oauth/authorize",
         oauthToken: "/oauth/token",
+        oauthRegister: "/oauth/register",
         oauthDiscovery: "/.well-known/oauth-authorization-server"
       },
       supportedChain: "Solana Mainnet",
@@ -71,6 +86,73 @@ export function startHttpServer(port: number = 3000) {
     });
   });
 
+  // =========================================================================
+  // RFC 8414 & OpenID OAuth Discovery Metadata (Required by Claude / IdPs)
+  // =========================================================================
+  const getDiscoveryMetadata = (req: Request) => {
+    const proto = req.headers["x-forwarded-proto"] || "https";
+    const host = req.headers.host || "paybox-collectorcrypt-mcp.onrender.com";
+    const baseUrl = `${proto}://${host}`;
+
+    return {
+      issuer: baseUrl,
+      authorization_endpoint: `${baseUrl}/oauth/authorize`,
+      token_endpoint: `${baseUrl}/oauth/token`,
+      registration_endpoint: `${baseUrl}/oauth/register`,
+      response_types_supported: ["code"],
+      grant_types_supported: ["authorization_code", "refresh_token"],
+      code_challenge_methods_supported: ["S256"],
+      token_endpoint_auth_methods_supported: ["none", "client_secret_post", "client_secret_basic"],
+      scopes_supported: ["wallet:read", "wallet:write", "vault:trade"]
+    };
+  };
+
+  app.get("/.well-known/oauth-authorization-server", (req: Request, res: Response) => {
+    res.json(getDiscoveryMetadata(req));
+  });
+
+  app.get("/.well-known/openid-configuration", (req: Request, res: Response) => {
+    res.json(getDiscoveryMetadata(req));
+  });
+
+  app.get("/.well-known/oauth-protected-resource", (req: Request, res: Response) => {
+    const proto = req.headers["x-forwarded-proto"] || "https";
+    const host = req.headers.host || "paybox-collectorcrypt-mcp.onrender.com";
+    const baseUrl = `${proto}://${host}`;
+    res.json({
+      resource: `${baseUrl}/mcp`,
+      authorization_servers: [baseUrl],
+      scopes_supported: ["wallet:read", "wallet:write", "vault:trade"]
+    });
+  });
+
+  // =========================================================================
+  // RFC 7591 Dynamic Client Registration (DCR) endpoint
+  // =========================================================================
+  app.post(["/oauth/register", "/register"], (req: Request, res: Response) => {
+    const { redirect_uris, client_name } = req.body || {};
+    const clientId = `claude_${crypto.randomBytes(12).toString("hex")}`;
+    const validRedirects = Array.isArray(redirect_uris) && redirect_uris.length > 0
+      ? redirect_uris
+      : ["https://claude.ai/api/mcp/auth_callback"];
+
+    registeredClients.set(clientId, {
+      clientId,
+      clientName: client_name || "Claude Custom Connector",
+      redirectUris: validRedirects
+    });
+
+    console.log(`[OAuth DCR] Registered dynamic client: ${clientId}`);
+
+    res.status(201).json({
+      client_id: clientId,
+      client_name: client_name || "Claude Custom Connector",
+      redirect_uris: validRedirects,
+      grant_types: ["authorization_code", "refresh_token"],
+      response_types: ["code"],
+      token_endpoint_auth_method: "none"
+    });
+  });
 
   // =========================================================================
   // Interactive Web3 Wallet Link Portal: /oauth/authorize
