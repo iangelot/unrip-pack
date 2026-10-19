@@ -86,5 +86,58 @@ export function registerLendingTools(server, ccService, accountService) {
             content: [{ type: "text", text: JSON.stringify(payload, null, 2) }]
         };
     });
+    // Tool: execute_card_loan (Direct execution)
+    server.tool("execute_card_loan", "Lock a card NFT into Collector Crypt lending escrow and borrow USDC instantly into your account balance. Zero address needed; auto-resolves from session.", {
+        cardId: z.string().describe("Card ID to use as collateral"),
+        borrowAmountUsdc: z.number().positive().describe("Amount of USDC to borrow (must not exceed max LTV)"),
+        loanDurationDays: z.enum(["30", "60", "90", "180"]).describe("Duration of the loan in days"),
+        userAddress: z.string().optional().describe("Optional explicit Solana wallet address. Defaults to connected session wallet.")
+    }, async (args) => {
+        try {
+            const activeAddress = accountService.getActiveAddress(args.userAddress);
+            const card = ccService.getCardById(args.cardId);
+            if (!card) {
+                return {
+                    content: [{ type: "text", text: `Error: Card "${args.cardId}" not found in vault.` }],
+                    isError: true
+                };
+            }
+            const maxBorrow = card.estimatedValueUsdc * 0.55;
+            if (args.borrowAmountUsdc > maxBorrow) {
+                return {
+                    content: [
+                        {
+                            type: "text",
+                            text: `Error: Requested borrow amount of $${args.borrowAmountUsdc} exceeds maximum allowed 55% LTV ($${maxBorrow} USDC).`
+                        }
+                    ],
+                    isError: true
+                };
+            }
+            const days = parseInt(args.loanDurationDays, 10);
+            const loanReceipt = accountService.executeLoan(card.id, card.name, args.borrowAmountUsdc, days);
+            return {
+                content: [
+                    {
+                        type: "text",
+                        text: JSON.stringify({
+                            status: "LOAN_EXECUTED",
+                            message: `Successfully borrowed $${args.borrowAmountUsdc} USDC against "${card.name}".`,
+                            loanDetails: loanReceipt,
+                            newAccountBalanceUsdc: `$${accountService.getAccount().balances.usdc} USDC`,
+                            nextAction: `Repay $${args.borrowAmountUsdc} USDC before ${loanReceipt.dueDate} to release your card NFT from escrow.`
+                        }, null, 2)
+                    }
+                ]
+            };
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            return {
+                content: [{ type: "text", text: `Error executing loan: ${msg}` }],
+                isError: true
+            };
+        }
+    });
 }
 //# sourceMappingURL=lendingTools.js.map

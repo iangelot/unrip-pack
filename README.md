@@ -58,117 +58,62 @@ npm run test:client
 
 ---
 
-## 🌐 Running in Remote Mode (HTTP / SSE) for Cloud AIs & Web Clients
+## 🌐 Claude Custom Connector & Remote Web Mode (Streamable HTTP)
 
-This plugin supports **Dual Mode**:
-1. **Local Mode (`stdio`):** Default for local Cursor, Claude Desktop, and CLI harnesses.
-2. **Remote Web Mode (`HTTP / SSE`):** Runs an Express server exposing `/sse` and `/messages`, enabling web AIs (ChatGPT, Claude Web, Grok, and PayBox Cloud) to connect via HTTPS without installing any local code.
+This plugin runs as an **Agent Wallet** for Claude Custom Connectors, ChatGPT, and PayBox, implementing the modern Anthropic **Streamable HTTP** specification (the same standard used by official connectors like VidIQ and Figma).
 
-### Start the Remote Server Locally:
-```bash
-npm run start:http
+### Live Render URL:
 ```
-* **Local Web Server:** `http://localhost:3000`
-* **SSE Endpoint:** `http://localhost:3000/sse`
-* **Health Check:** `http://localhost:3000/health`
-
----
-
-## ☁️ 1-Click Free Cloud Deployment (Render / Railway / Fly.io)
-
-### Deploy to Render.com (100% Free):
-1. Push your repository to GitHub.
-2. Go to [Render Dashboard](https://dashboard.render.com/) -> **New Blueprint**.
-3. Select this repo (`render.yaml` will automatically configure the build and start commands).
-4. You will get a live public HTTPS URL: `https://paybox-collectorcrypt.onrender.com/sse`.
-
-### Deploy using Docker (Railway, Fly.io, Google Cloud Run):
-```bash
-docker build -t paybox-collectorcrypt-plugin .
-docker run -p 3000:3000 paybox-collectorcrypt-plugin
+https://paybox-collectorcrypt-mcp.onrender.com/mcp
 ```
 
----
+### Adding to Claude (Web & Desktop):
+1. In Claude, go to **Customize** &rarr; **Connectors** &rarr; Click **Add custom connector**.
+2. Set **Name:** `Collector Crypt`
+3. Set **MCP Server URL:** `https://paybox-collectorcrypt-mcp.onrender.com/mcp`
+4. Click **Connect**. That's it!
 
-## 🔌 Connecting Any AI to Your Server
-
-### Option A: Using the Remote Hosted URL (ChatGPT, Web Claude, PayBox Cloud)
-In your AI connector or MCP config:
-```json
-{
-  "mcpServers": {
-    "collector-crypt": {
-      "url": "https://paybox-collectorcrypt.onrender.com/sse"
-    }
-  }
-}
-```
-
-### Option B: Local CLI Execution (Cursor / Claude Desktop)
-```json
-{
-  "mcpServers": {
-    "collector-crypt": {
-      "command": "node",
-      "args": [
-        "C:/Users/idris/.gemini/antigravity-ide/scratch/paybox-collectorcrypt-plugin/dist/index.js"
-      ]
-    }
-  }
-}
-```
+### 🔑 Wallet Linking & Identity:
+* **Zero Address Hassle:** You never have to manually input your 44-character Solana address in chat.
+* **Auto-Resolution:** Asking *"What cards do I have?"* or *"What is my balance?"* automatically resolves your active connected wallet.
+* **Instant Wallet Generation:** Ask Claude *"Create a new PayBox wallet for me"* to provision a fresh non-custodial Solana keypair with testnet sandbox balances.
+* **Link Existing Solana Wallet:** Say *"Link my wallet <solana_address>"* in chat or visit the interactive Web3 portal at `https://paybox-collectorcrypt-mcp.onrender.com/oauth/authorize`.
 
 ---
 
-## 🚀 Publishing to Public Registries (Smithery.ai & npm)
+## 🧰 Complete MCP Tool Matrix (23 Tools)
 
-1. **Publish to npm:**
-   ```bash
-   npm publish --access public
-   ```
-2. **List on Smithery.ai:**
-   * Go to [smithery.ai](https://smithery.ai/) -> Click **Submit Server**.
-   * Link your GitHub repo (`smithery.yaml` is pre-configured for automated indexing).
-   * Now any user in the world can install your Collector Crypt plugin with one click!
-
----
-```json
-{
-  "mcpServers": {
-    "collector-crypt": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "tsx",
-        "C:/Users/idris/.gemini/antigravity-ide/scratch/paybox-collectorcrypt-plugin/src/index.ts"
-      ]
-    }
-  }
-}
-```
-
----
-
-## 🧰 Available MCP Tools
-
-| Tool | Category | Description |
-| :--- | :--- | :--- |
-| `get_vault_inventory` | Vault | Search vaulted cards by franchise, PSA grade, and price range. |
-| `get_card_details` | Vault | Get cert number, vault facility (PSA Delaware / PWCC Oregon), and 1:1 NFT mint. |
-| `get_user_collection` | Portfolio | Inspect cards held in the user's Solana address or PayBox vault. |
-| `get_pack_drops` | Gacha | List available mystery packs with live pricing and top prizes. |
-| `prepare_buy_gacha_pack` | Action | Prepare a payment payload for PayBox's `request_payment` tool. |
-| `get_cards_token_info` | Token | Live $CARDS token price, 24h change, and buyback fund balance. |
-| `get_user_balances` | Wallet | Query live SOL, USDC, and $CARDS balances for an address. |
-| `prepare_swap_cards` | Action | Prepare a token swap payload for PayBox's `request_swap` tool. |
-| `get_buyback_quote` | Liquidity | Instant buyback quote for a card NFT in USDC and $CARDS. |
-| `get_physical_redemption_quote` | Physical | Calculate vault handling and insured courier shipping fees. |
-| `prepare_physical_redemption` | Action | Prepare an NFT burn instruction for PayBox's `request_wallet_sign` tool. |
+| Tool | Category | Execution Type | Description |
+| :--- | :--- | :--- | :--- |
+| `get_account` | Account | Auto-Resolve | Connected address, live balances (SOL/USDC/CARDS), spend safety limits. |
+| `create_agent_wallet` | Account | Direct | Provision fresh non-custodial Solana keypair with starting sandbox balances. |
+| `connect_wallet` | Account | Direct | Link an existing Solana wallet address to your session with Base58 validation. |
+| `get_portfolio_summary` | Account | Auto-Resolve | Consolidated single-call card count, estimated collection value, balances, and net worth. |
+| `set_spend_limits` | Security | Direct | Configure per-tx spend cap, daily spend limit, and passkey prompt threshold. |
+| `get_transactions` | History | Paginated | List recent transaction records, block explorer links, and status. |
+| `get_transaction_status` | History | Lookup | Check on-chain confirmation status for any transaction signature. |
+| `open_gacha_pack` | Gacha | Direct | Direct pack opening: rolls randomized pull, reveals card + PSA grade + market value, and adds card to your vault. |
+| `get_pack_drops` | Gacha | Query | Browse active mystery packs, pricing, remaining supply, and grail odds. |
+| `get_pack_history` | Gacha | Paginated | All-time opened packs, pulled cards, and net PnL / ROI tracking. |
+| `prepare_buy_gacha_pack` | Gacha | Prepare | Construct transaction payload for external PayBox `request_payment`. |
+| `get_vault_inventory` | Vault | Search | Filter vaulted physical cards by franchise (Pokemon/Sports/OP/MTG), PSA grade, and price. |
+| `get_card_details` | Vault | Query | In-depth metadata, cert number, digital twin NFT mint, and vault facility. |
+| `get_user_collection` | Vault | Paginated | List tokenized card NFTs in your vault with pagination (`limit`, `offset`). |
+| `get_buyback_quote` | Liquidity | Query | Instant guaranteed buyback quote in USDC and $CARDS. |
+| `execute_card_buyback` | Liquidity | Direct | Sell card back to Collector Crypt, burn NFT, and credit USDC to your account. |
+| `get_physical_redemption_quote` | Physical | Query | Calculate courier delivery, vault handling, and insurance fees. |
+| `prepare_physical_redemption` | Physical | Prepare | Prepare NFT burn payload for PayBox `request_wallet_sign`. |
+| `execute_physical_redemption` | Physical | Direct | Burn NFT and schedule armored FedEx courier delivery of the physical graded slab. |
+| `get_lending_terms` | DeFi | Query | Calculate 55% LTV collateralized loan terms, APR, and liquidation threshold. |
+| `execute_card_loan` | DeFi | Direct | Lock card NFT in lending escrow and borrow USDC directly into your balance. |
+| `execute_token_swap` | Token | Direct | Swap USDC and $CARDS with slippage guardrails and immediate balance updates. |
+| `get_cards_token_info` | Token | Query | Live $CARDS token price, 24h change, market cap, and buyback fund. |
 
 ---
 
-## 🛡️ Security Architecture
+## 🛡️ Security Architecture & Guardrails
 
-The plugin implements a zero-trust model:
-1. **No Private Keys Stored:** The plugin only constructs transaction instructions and metadata.
-2. **PayBox Guardrails:** PayBox manages the MPC keys and prompts the user for passkey verification before signing transactions that move funds.
+1. **Non-Custodial Architecture:** Keys are never stored in plaintext on disk; operations run under non-custodial MPC protocols.
+2. **Deterministic Spend Limits:** The AI agent cannot spend beyond user-configured per-transaction and 24h daily caps.
+3. **Passkey Escalation:** High-value actions trigger WebAuthn passkey confirmation before settlement.
+

@@ -125,5 +125,43 @@ export function registerRedemptionTools(server, ccService, accountService) {
             };
         }
     });
+    // Tool 5: execute_physical_redemption (Direct execution)
+    server.tool("execute_physical_redemption", "Burn the 1:1 tokenized NFT and authorize immediate vault release & armored courier delivery of the physical graded card slab to your physical address. Debits courier fee from USDC balance and provides a FedEx secure tracking code.", {
+        cardId: z.string().describe("The card ID (e.g. 'cc-pkmn-003') or NFT mint to physically redeem"),
+        destinationCountry: z.string().optional().default("US").describe("Country destination for delivery (e.g., 'US', 'GB', 'CA', 'JP')"),
+        userAddress: z.string().optional().describe("Optional explicit Solana wallet address. Defaults to connected session wallet.")
+    }, async (args) => {
+        try {
+            const activeAddress = accountService.getActiveAddress(args.userAddress);
+            const quote = ccService.getPhysicalRedemptionQuote(args.cardId, args.destinationCountry);
+            // Remove card from digital vault collection (NFT is burned)
+            const removed = ccService.removeCardFromUserCollection(activeAddress, quote.cardId);
+            // Execute redemption in account service
+            const receipt = accountService.executePhysicalRedemption(removed.id, removed.name, quote.certNumber, args.destinationCountry, quote.totalCostUsdc);
+            return {
+                content: [
+                    {
+                        type: "text",
+                        text: JSON.stringify({
+                            status: "PHYSICAL_REDEMPTION_AUTHORIZED",
+                            message: `NFT for "${removed.name}" burned successfully. Physical slab dispatched from ${quote.vaultLocation}.`,
+                            details: receipt,
+                            vaultLocation: quote.vaultLocation,
+                            insuredShippingFeePaidUsdc: `$${quote.totalCostUsdc} USDC`,
+                            remainingAccountBalanceUsdc: `$${accountService.getAccount().balances.usdc} USDC`,
+                            instructions: "Track your armored courier delivery using the tracking number above."
+                        }, null, 2)
+                    }
+                ]
+            };
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            return {
+                content: [{ type: "text", text: `Error executing physical redemption: ${msg}` }],
+                isError: true
+            };
+        }
+    });
 }
 //# sourceMappingURL=redemptionTools.js.map

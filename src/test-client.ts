@@ -123,10 +123,41 @@ async function testAllFeatures() {
   console.log(`Sold "${cardToSell.name}" for instant $${bbQuote.instantPayoutUsdc} USDC.`);
   console.log(`Balance before: $${beforeUsdc} USDC -> Balance after: $${account.balances.usdc} USDC`);
 
-  console.log("\n=== ALL TESTS PASSED SUCCESSFULLY! ===");
+  // 15. Testing createAgentWallet (1-click non-custodial wallet generation)
+  console.log("\n15. Testing create_agent_wallet (Instant PayBox Agent Wallet):");
+  const newWallet = accountService.createAgentWallet();
+  console.log(`Created Wallet: ${newWallet.account.walletAddress}`);
+  console.log(`Starting Balances: ${newWallet.account.balances.sol} SOL | ${newWallet.account.balances.usdc} USDC`);
+
+  // 16. Testing get_transactions (Pagination & history)
+  console.log("\n16. Testing get_transactions (Paginated transaction logging):");
+  const txHistory = accountService.getTransactionHistory(5);
+  console.log(`Total transactions logged: ${txHistory.total}`);
+  console.log(`Latest TX: [${txHistory.transactions[0]?.type}] ${txHistory.transactions[0]?.description}`);
+
+  // 17. Testing execute_card_loan (Direct DeFi borrowing)
+  console.log("\n17. Testing execute_card_loan (Direct DeFi borrowing against vaulted slab):");
+  const loanReceipt = accountService.executeLoan("cc-pkmn-003", "Gengar VMAX Alt Art", 200, 30);
+  console.log(`Loan ID: ${loanReceipt.loanId} | Borrowed: $${loanReceipt.borrowAmountUsdc} USDC`);
+  console.log(`Due Date: ${loanReceipt.dueDate} | New USDC Balance: $${accountService.getAccount().balances.usdc}`);
+
+  // 18. Testing execute_physical_redemption (Burn NFT & dispatch slab)
+  console.log("\n18. Testing execute_physical_redemption (Burn NFT & courier dispatch):");
+  const rdmReceipt = accountService.executePhysicalRedemption(
+    "cc-pkmn-003",
+    "Gengar VMAX Alt Art",
+    "001429910",
+    "US",
+    40
+  );
+  console.log(`Redemption ID: ${rdmReceipt.redemptionId} | Tracking: ${rdmReceipt.trackingNumber}`);
+  console.log(`Carrier: ${rdmReceipt.carrier} | Delivery: ${rdmReceipt.deliveryEstimate}`);
+
+  console.log("\n=== ALL 18 TEST SUITES PASSED SUCCESSFULLY! ===");
 }
 
 testAllFeatures().catch((err) => {
   console.error("Test failed with error:", err);
   process.exit(1);
 });
+

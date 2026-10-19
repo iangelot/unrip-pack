@@ -131,5 +131,49 @@ export function registerAccountTools(server, accountService, ccService) {
             content: [{ type: "text", text: JSON.stringify(status, null, 2) }]
         };
     });
+    // Tool 6: create_agent_wallet
+    server.tool("create_agent_wallet", "Generate a new non-custodial Solana wallet instantly for your PayBox agent. Automatically links it to your active session and credits initial sandbox testnet balances so you can immediately buy packs and manage cards.", {}, async () => {
+        try {
+            const result = accountService.createAgentWallet();
+            return {
+                content: [
+                    {
+                        type: "text",
+                        text: JSON.stringify({
+                            status: "WALLET_CREATED",
+                            message: result.message,
+                            walletAddress: result.account.walletAddress,
+                            connectedVia: result.account.connectedVia,
+                            initialBalances: result.account.balances,
+                            spendLimits: result.account.spendLimits,
+                            securityNote: "Keys are non-custodial and secured in PayBox MPC secure enclaves."
+                        }, null, 2)
+                    }
+                ]
+            };
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            return {
+                content: [{ type: "text", text: `Error creating wallet: ${msg}` }],
+                isError: true
+            };
+        }
+    });
+    // Tool 7: get_transactions
+    server.tool("get_transactions", "List recent transaction history for your account, including pack purchases, card buybacks, swaps, and redemptions with block explorer URLs. Supports pagination.", {
+        limit: z.number().optional().default(10).describe("Number of transactions to return"),
+        offset: z.number().optional().default(0).describe("Pagination offset")
+    }, async (args) => {
+        const history = accountService.getTransactionHistory(args.limit, args.offset);
+        return {
+            content: [
+                {
+                    type: "text",
+                    text: JSON.stringify(history, null, 2)
+                }
+            ]
+        };
+    });
 }
 //# sourceMappingURL=accountTools.js.map

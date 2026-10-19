@@ -5,15 +5,32 @@ export declare class AccountService {
     private packHistory;
     private transactionHistory;
     private solanaService;
+    private tokenAccountMap;
     constructor(solanaService: SolanaService);
     /**
      * Validate if a string is a valid Solana Base58 public key
      */
     validateSolanaAddress(address: string): boolean;
     /**
+     * Create a new non-custodial PayBox Agent Wallet on Solana
+     */
+    createAgentWallet(): {
+        account: UserAccount;
+        secretKeyBase58: string;
+        message: string;
+    };
+    /**
      * Link or change the connected wallet address
      */
     connectWallet(address: string): Promise<UserAccount>;
+    /**
+     * Map OAuth bearer token to a specific wallet account
+     */
+    registerTokenAccount(token: string, account: UserAccount): void;
+    /**
+     * Get account associated with a bearer token, or active default
+     */
+    getAccountForToken(token?: string): UserAccount;
     /**
      * Get the active connected wallet address (auto-resolves for any tool)
      */
@@ -54,9 +71,14 @@ export declare class AccountService {
      */
     recordTransaction(tx: TransactionRecord): void;
     /**
-     * Get transaction history
+     * Get transaction history with pagination
      */
-    getTransactionHistory(limit?: number): TransactionRecord[];
+    getTransactionHistory(limit?: number, offset?: number): {
+        total: number;
+        hasMore: boolean;
+        nextOffset?: number;
+        transactions: TransactionRecord[];
+    };
     /**
      * Look up transaction status by signature
      */
@@ -66,11 +88,39 @@ export declare class AccountService {
         message: string;
     };
     /**
-     * Credit user balance on buyback or sale
+     * Credit user balance on buyback, loan release, or sale
      */
     creditBalance(amountUsdc: number): void;
     /**
-     * Debit user balance on pack buy
+     * Debit user balance on pack buy, loan repayment, or fee
      */
     debitBalance(amountUsdc: number): void;
+    /**
+     * Execute collateralized DeFi loan directly
+     */
+    executeLoan(cardId: string, cardName: string, borrowAmountUsdc: number, durationDays: number): {
+        loanId: string;
+        borrowAmountUsdc: number;
+        originationFeeUsdc: number;
+        netReceivedUsdc: number;
+        durationDays: number;
+        dueDate: string;
+        collateralCard: string;
+        txSignature: string;
+        solanaExplorerUrl: string;
+    };
+    /**
+     * Execute physical vault redemption directly
+     */
+    executePhysicalRedemption(cardId: string, cardName: string, certNumber: string, destinationCountry: string, totalCostUsdc: number): {
+        redemptionId: string;
+        cardName: string;
+        certNumber: string;
+        trackingNumber: string;
+        carrier: string;
+        deliveryEstimate: string;
+        feePaidUsdc: number;
+        txSignature: string;
+        status: string;
+    };
 }
