@@ -20,10 +20,33 @@ export declare class CollectorCryptService {
      * Get single card metadata & vault certification details
      */
     getCardById(cardId: string): VaultedCard | undefined;
+    private userCardPortfolios;
     /**
-     * Get cards held by a user's address
+     * Get cards held by a user's address with pagination support
      */
-    getUserVaultCards(userAddress: string): VaultedCard[];
+    getUserVaultCards(userAddress: string, limit?: number, offset?: number): {
+        total: number;
+        cards: VaultedCard[];
+        hasMore: boolean;
+        nextOffset?: number;
+    };
+    /**
+     * Add a newly pulled card to the user's active collection
+     */
+    addCardToUserCollection(userAddress: string, card: VaultedCard): void;
+    /**
+     * Remove card on buyback or physical redemption burn
+     */
+    removeCardFromUserCollection(userAddress: string, cardId: string): VaultedCard;
+    /**
+     * Execute randomized Gacha pack opening with authentic odds
+     */
+    openGachaPack(packId: string, userAddress: string): {
+        cardPulled: VaultedCard;
+        netPnlUsdc: number;
+        isProfit: boolean;
+        txSignature: string;
+    };
     /**
      * List available Gacha packs
      */

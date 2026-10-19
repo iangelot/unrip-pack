@@ -15,6 +15,7 @@ export interface VaultedCard {
     ownerAddress?: string;
     imageUrl: string;
     isAvailableForTrade: boolean;
+    acquiredDate?: string;
 }
 export interface GachaPack {
     id: string;
@@ -69,4 +70,65 @@ export interface PayBoxExecutionPayload {
     instructionsBreakdown: string[];
     requiresApprovalPrompt: boolean;
     metadata: Record<string, unknown>;
+}
+export interface SpendLimits {
+    perTransactionCapUsd: number;
+    dailySpendCapUsd: number;
+    dailySpentSoFarUsd: number;
+    requiresPasskeyAboveUsd: number;
+}
+export interface UserAccount {
+    walletAddress: string;
+    connectedVia: "PayBox MPC Vault" | "Solana Native" | "Default Agent Session";
+    isConnected: boolean;
+    balances: {
+        sol: number;
+        usdc: number;
+        cards: number;
+    };
+    spendLimits: SpendLimits;
+    createdAt: string;
+    lastActive: string;
+}
+export interface OpenedPackRecord {
+    id: string;
+    packId: string;
+    packTitle: string;
+    openedAt: string;
+    paidAmount: number;
+    paidCurrency: "USDC" | "CARDS";
+    cardPulled: VaultedCard;
+    isProfit: boolean;
+    netPnlUsdc: number;
+    txSignature: string;
+}
+export interface TransactionRecord {
+    signature: string;
+    type: "PACK_BUY" | "PACK_OPEN" | "SWAP" | "BUYBACK" | "LOAN" | "REDEMPTION";
+    status: "confirmed" | "finalized" | "failed";
+    timestamp: string;
+    description: string;
+    amountUsd: number;
+    solanaExplorerUrl: string;
+}
+export interface PortfolioSummary {
+    walletAddress: string;
+    totalCardsHeld: number;
+    totalEstimatedValueUsdc: number;
+    unopenedPacksCount: number;
+    totalPacksOpenedAllTime: number;
+    allTimePackPnlUsdc: number;
+    balances: {
+        sol: number;
+        usdc: number;
+        cards: number;
+        totalTokenValueUsdc: number;
+    };
+    totalNetWorthUsdc: number;
+    topCards: {
+        name: string;
+        grade: string;
+        valueUsdc: number;
+        certNumber: string;
+    }[];
 }

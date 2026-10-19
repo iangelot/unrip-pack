@@ -1,7 +1,12 @@
 import { z } from "zod";
 import { CollectorCryptService } from "../services/collectorCrypt.js";
+import { AccountService } from "../services/accountService.js";
 
-export function registerVaultTools(server: any, ccService: CollectorCryptService) {
+export function registerVaultTools(
+  server: any,
+  ccService: CollectorCryptService,
+  accountService: AccountService
+) {
   // Tool 1: get_vault_inventory
   server.tool(
     "get_vault_inventory",
@@ -67,30 +72,44 @@ export function registerVaultTools(server: any, ccService: CollectorCryptService
     }
   );
 
-  // Tool 3: get_user_collection
+  // Tool 3: get_user_collection (Does NOT require userAddress; auto-resolves from session)
   server.tool(
     "get_user_collection",
-    "List all tokenized 1:1 card NFTs currently held in the user's Solana address or PayBox vault.",
+    "List all tokenized 1:1 card NFTs currently held in your vault. Does NOT require userAddress. Supports pagination via limit and offset.",
     {
-      userAddress: z.string().describe("The user's Solana public key / wallet address")
+      userAddress: z.string().optional().describe("Optional explicit Solana wallet address. Defaults to connected session wallet."),
+      limit: z.number().optional().default(10).describe("Number of cards to return (default 10)"),
+      offset: z.number().optional().default(0).describe("Pagination offset (default 0)")
     },
     async (args: any) => {
-      const cards = ccService.getUserVaultCards(args.userAddress);
-      const totalPortfolioValueUsdc = cards.reduce((sum, c) => sum + c.estimatedValueUsdc, 0);
+      try {
+        const activeAddress = accountService.getActiveAddress(args.userAddress);
+        const result = ccService.getUserVaultCards(activeAddress, args.limit, args.offset);
+        const totalPortfolioValueUsdc = result.cards.reduce((sum, c) => sum + c.estimatedValueUsdc, 0);
 
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({
-              ownerAddress: args.userAddress,
-              cardsHeldCount: cards.length,
-              totalPortfolioValueUsdc,
-              cards
-            }, null, 2)
-          }
-        ]
-      };
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                ownerAddress: activeAddress,
+                totalCardsHeldCount: result.total,
+                paginatedCount: result.cards.length,
+                hasMore: result.hasMore,
+                nextOffset: result.nextOffset,
+                estimatedPortfolioValueUsdc: totalPortfolioValueUsdc,
+                cards: result.cards
+              }, null, 2)
+            }
+          ]
+        };
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return {
+          content: [{ type: "text", text: `Error: ${msg}` }],
+          isError: true
+        };
+      }
     }
   );
 }

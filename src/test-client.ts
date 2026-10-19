@@ -93,6 +93,36 @@ async function testAllFeatures() {
   const feeEstimate = 12 + 0.5 + 25 + Math.max(5, declaredVal * 0.005);
   console.log(`Estimated cost to vault, PSA grade, and mint raw 1999 card: $${feeEstimate} USDC`);
 
+  // 11. Testing Wallet Identity & get_account (Zero userAddress required)
+  console.log("\n11. Testing Wallet Auto-Resolution & get_account:");
+  const { AccountService } = await import("./services/accountService.js");
+  const accountService = new AccountService(solanaService);
+  const account = accountService.getAccount();
+  console.log(`Connected Wallet: ${account.walletAddress} (${account.connectedVia})`);
+  console.log(`Balances: ${account.balances.sol} SOL | ${account.balances.usdc} USDC | ${account.balances.cards} CARDS`);
+
+  // 12. Testing Direct Pack Opening (Execute RNG drop)
+  console.log("\n12. Testing open_gacha_pack (Direct execution & card pull):");
+  const openResult = ccService.openGachaPack("pack-modern-heat", account.walletAddress);
+  console.log(`Pulled Card: ${openResult.cardPulled.name} (${openResult.cardPulled.grade})`);
+  console.log(`Pulled Value: $${openResult.cardPulled.estimatedValueUsdc} USDC | Net PnL: $${openResult.netPnlUsdc} USDC`);
+  console.log(`Tx Signature: ${openResult.txSignature}`);
+
+  // 13. Testing get_portfolio_summary
+  console.log("\n13. Testing get_portfolio_summary (Consolidated one-call summary):");
+  const userVaultCards = ccService.getUserVaultCards(account.walletAddress);
+  console.log(`Total Cards in Vault: ${userVaultCards.total}`);
+  console.log(`Top Card in Collection: ${userVaultCards.cards[0]?.name} ($${userVaultCards.cards[0]?.estimatedValueUsdc})`);
+
+  // 14. Testing Instant Buyback Execution (Close liquidity loop)
+  console.log("\n14. Testing execute_card_buyback (Direct cash-out & balance credit):");
+  const beforeUsdc = account.balances.usdc;
+  const cardToSell = userVaultCards.cards[0];
+  const bbQuote = ccService.getInstantBuybackQuote(cardToSell.id);
+  accountService.creditBalance(bbQuote.instantPayoutUsdc);
+  console.log(`Sold "${cardToSell.name}" for instant $${bbQuote.instantPayoutUsdc} USDC.`);
+  console.log(`Balance before: $${beforeUsdc} USDC -> Balance after: $${account.balances.usdc} USDC`);
+
   console.log("\n=== ALL TESTS PASSED SUCCESSFULLY! ===");
 }
 

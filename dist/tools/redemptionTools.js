@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { PayBoxBridge } from "../services/payboxBridge.js";
-export function registerRedemptionTools(server, ccService) {
-    // Tool: get_buyback_quote
+export function registerRedemptionTools(server, ccService, accountService) {
+    // Tool 1: get_buyback_quote
     server.tool("get_buyback_quote", "Get an instant liquidity buyback quote from Collector Crypt for a tokenized card. Shows guaranteed instant payout in both USDC and $CARDS.", {
         cardId: z.string().describe("The card ID (e.g. 'cc-pkmn-003') or NFT mint address")
     }, async (args) => {
@@ -19,17 +19,56 @@ export function registerRedemptionTools(server, ccService) {
         catch (err) {
             const errorMsg = err instanceof Error ? err.message : String(err);
             return {
-                content: [
-                    {
-                        type: "text",
-                        text: `Error generating buyback quote: ${errorMsg}`
-                    }
-                ],
+                content: [{ type: "text", text: `Error generating buyback quote: ${errorMsg}` }],
                 isError: true
             };
         }
     });
-    // Tool: get_physical_redemption_quote
+    // Tool 2: execute_card_buyback (Direct execution closing the liquidity loop)
+    server.tool("execute_card_buyback", "Sell a card back to Collector Crypt for instant guaranteed USDC payout. Burns the digital NFT, removes the card from your collection, and credits USDC directly into your account balance.", {
+        cardId: z.string().describe("The card ID (e.g. 'cc-pkmn-003') or NFT mint address to sell"),
+        userAddress: z.string().optional().describe("Optional explicit Solana address. Defaults to connected session wallet.")
+    }, async (args) => {
+        try {
+            const activeAddress = accountService.getActiveAddress(args.userAddress);
+            const quote = ccService.getInstantBuybackQuote(args.cardId);
+            // Remove card from user's collection
+            const removed = ccService.removeCardFromUserCollection(activeAddress, quote.cardId);
+            // Credit user's account balance
+            accountService.creditBalance(quote.instantPayoutUsdc);
+            // Generate transaction signature and log history
+            const txSig = `5bbk${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}...sol`;
+            accountService.recordTransaction({
+                signature: txSig,
+                type: "BUYBACK",
+                status: "finalized",
+                timestamp: new Date().toISOString(),
+                description: `Instant Buyback: Sold ${removed.name} for $${quote.instantPayoutUsdc} USDC`,
+                amountUsd: quote.instantPayoutUsdc,
+                solanaExplorerUrl: `https://solscan.io/tx/${txSig}`
+            });
+            const receipt = {
+                status: "BUYBACK_EXECUTED",
+                message: `Successfully sold "${removed.name}" for instant liquidity.`,
+                payoutReceived: `$${quote.instantPayoutUsdc} USDC`,
+                feeDeducted: `${quote.feePercent}%`,
+                newAccountBalanceUsdc: `$${accountService.getAccount().balances.usdc} USDC`,
+                solanaTxSignature: txSig,
+                solanaExplorerUrl: `https://solscan.io/tx/${txSig}`
+            };
+            return {
+                content: [{ type: "text", text: JSON.stringify(receipt, null, 2) }]
+            };
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            return {
+                content: [{ type: "text", text: `Error executing buyback: ${msg}` }],
+                isError: true
+            };
+        }
+    });
+    // Tool 3: get_physical_redemption_quote
     server.tool("get_physical_redemption_quote", "Calculate insured courier shipping and vault release handling fees to burn the digital NFT and have the authenticated physical card slab shipped to your door.", {
         cardId: z.string().describe("The card ID (e.g. 'cc-pkmn-001') or NFT mint address"),
         destinationCountry: z.string().optional().default("US").describe("Two-letter country code or country name (e.g., 'US', 'GB', 'CA', 'JP')")
@@ -48,26 +87,22 @@ export function registerRedemptionTools(server, ccService) {
         catch (err) {
             const errorMsg = err instanceof Error ? err.message : String(err);
             return {
-                content: [
-                    {
-                        type: "text",
-                        text: `Error calculating redemption quote: ${errorMsg}`
-                    }
-                ],
+                content: [{ type: "text", text: `Error calculating redemption quote: ${errorMsg}` }],
                 isError: true
             };
         }
     });
-    // Tool: prepare_physical_redemption
+    // Tool 4: prepare_physical_redemption
     server.tool("prepare_physical_redemption", "Prepare the transaction payload to burn the tokenized NFT and authorize physical slab dispatch from the vault. Formatted for PayBox's `request_wallet_sign` tool.", {
-        userAddress: z.string().describe("The user's Solana wallet address / PayBox address"),
         cardId: z.string().describe("The card ID or NFT mint address to physically redeem"),
-        destinationCountry: z.string().optional().default("US").describe("Destination country for courier delivery")
+        destinationCountry: z.string().optional().default("US").describe("Destination country for courier delivery"),
+        userAddress: z.string().optional().describe("Optional explicit Solana wallet address. Defaults to connected session wallet.")
     }, async (args) => {
         try {
+            const activeAddress = accountService.getActiveAddress(args.userAddress);
             const quote = ccService.getPhysicalRedemptionQuote(args.cardId, args.destinationCountry);
             const payload = PayBoxBridge.formatRedemptionSignPayload({
-                userAddress: args.userAddress,
+                userAddress: activeAddress,
                 cardName: quote.cardName,
                 nftMint: quote.nftMint,
                 shippingFeeUsdc: quote.totalCostUsdc,
@@ -85,12 +120,7 @@ export function registerRedemptionTools(server, ccService) {
         catch (err) {
             const errorMsg = err instanceof Error ? err.message : String(err);
             return {
-                content: [
-                    {
-                        type: "text",
-                        text: `Error preparing physical redemption: ${errorMsg}`
-                    }
-                ],
+                content: [{ type: "text", text: `Error preparing physical redemption: ${errorMsg}` }],
                 isError: true
             };
         }

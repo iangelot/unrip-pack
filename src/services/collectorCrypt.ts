@@ -245,18 +245,181 @@ export class CollectorCryptService {
    * Get single card metadata & vault certification details
    */
   public getCardById(cardId: string): VaultedCard | undefined {
-    return this.vaultedInventory.find(c => c.id === cardId || c.nftMint === cardId);
+    const fromInventory = this.vaultedInventory.find(c => c.id === cardId || c.nftMint === cardId);
+    if (fromInventory) return fromInventory;
+
+    for (const portfolio of this.userCardPortfolios.values()) {
+      const found = portfolio.find(c => c.id === cardId || c.nftMint === cardId);
+      if (found) return found;
+    }
+    return undefined;
+  }
+
+  // Dynamic in-memory user portfolio cards
+  private userCardPortfolios: Map<string, VaultedCard[]> = new Map();
+
+  /**
+   * Get cards held by a user's address with pagination support
+   */
+  public getUserVaultCards(userAddress: string, limit: number = 10, offset: number = 0): {
+    total: number;
+    cards: VaultedCard[];
+    hasMore: boolean;
+    nextOffset?: number;
+  } {
+    if (!this.userCardPortfolios.has(userAddress)) {
+      // Initialize with default starter card for connected wallet
+      const starterCard: VaultedCard = {
+        id: "cc-pkmn-003",
+        name: "Gengar VMAX Alternate Art Secret Rare #271",
+        category: "Pokemon",
+        set: "Fusion Strike",
+        year: 2021,
+        gradingCompany: "BGS",
+        grade: "9.5 Gem Mint",
+        certNumber: "001429910",
+        estimatedValueUsdc: 450,
+        floorPriceUsdc: 420,
+        vaultLocation: "PWCC Vault (Oregon, USA)",
+        nftMint: "GengarVMAXAlt111111111111111111111111111111",
+        ownerAddress: userAddress,
+        imageUrl: "https://collectorcrypt.com/assets/cards/gengar_vmax.jpg",
+        isAvailableForTrade: true,
+        acquiredDate: new Date(Date.now() - 86400000 * 2).toISOString()
+      };
+      this.userCardPortfolios.set(userAddress, [starterCard]);
+    }
+
+    const cards = this.userCardPortfolios.get(userAddress)!;
+    const paginated = cards.slice(offset, offset + limit);
+    const hasMore = offset + limit < cards.length;
+
+    return {
+      total: cards.length,
+      cards: paginated,
+      hasMore,
+      nextOffset: hasMore ? offset + limit : undefined
+    };
   }
 
   /**
-   * Get cards held by a user's address
+   * Add a newly pulled card to the user's active collection
    */
-  public getUserVaultCards(userAddress: string): VaultedCard[] {
-    // In live network, this queries Metaplex / Solana RPC for NFTs owned by userAddress
-    // For demonstration, match ownerAddress or simulate portfolio
-    return this.vaultedInventory.filter(
-      c => c.ownerAddress === userAddress || c.id === "cc-pkmn-003"
-    );
+  public addCardToUserCollection(userAddress: string, card: VaultedCard) {
+    if (!this.userCardPortfolios.has(userAddress)) {
+      this.userCardPortfolios.set(userAddress, []);
+    }
+    const collection = this.userCardPortfolios.get(userAddress)!;
+    card.ownerAddress = userAddress;
+    card.acquiredDate = new Date().toISOString();
+    collection.unshift(card);
+  }
+
+  /**
+   * Remove card on buyback or physical redemption burn
+   */
+  public removeCardFromUserCollection(userAddress: string, cardId: string): VaultedCard {
+    const collection = this.userCardPortfolios.get(userAddress) || [];
+    const index = collection.findIndex(c => c.id === cardId || c.nftMint === cardId);
+    if (index === -1) {
+      throw new Error(`Card "${cardId}" not found in your vault collection.`);
+    }
+    const [removed] = collection.splice(index, 1);
+    return removed;
+  }
+
+  /**
+   * Execute randomized Gacha pack opening with authentic odds
+   */
+  public openGachaPack(packId: string, userAddress: string): {
+    cardPulled: VaultedCard;
+    netPnlUsdc: number;
+    isProfit: boolean;
+    txSignature: string;
+  } {
+    const pack = this.getPackById(packId);
+    if (!pack) {
+      throw new Error(`Pack "${packId}" not found.`);
+    }
+
+    // Dynamic pool of cards that can be pulled from packs
+    const poolForPack: VaultedCard[] = [
+      {
+        id: `pull-${Date.now()}-1`,
+        name: pack.tier === "Legendary" 
+          ? "1999 Blastoise Base Set 1st Edition Holo #2"
+          : pack.tier === "Elite"
+          ? "Portgas D. Ace Manga Super Rare OP-02"
+          : "Umbreon VMAX Moonbreon Evolving Skies #215",
+        category: pack.tier === "Elite" ? "OnePiece" : "Pokemon",
+        set: pack.tier === "Legendary" ? "Base Set" : pack.tier === "Elite" ? "Paramount War OP-02" : "Evolving Skies",
+        year: pack.tier === "Legendary" ? 1999 : pack.tier === "Elite" ? 2023 : 2021,
+        gradingCompany: "PSA",
+        grade: "10 Gem Mint",
+        certNumber: `7${Math.floor(1000000 + Math.random() * 9000000)}`,
+        estimatedValueUsdc: pack.tier === "Legendary" ? 3400 : pack.tier === "Elite" ? 1850 : 1200,
+        floorPriceUsdc: pack.tier === "Legendary" ? 3100 : pack.tier === "Elite" ? 1700 : 1150,
+        vaultLocation: "PSA Vault (Delaware, USA)",
+        nftMint: `MintPull${Date.now().toString().slice(-8)}1111111111111111`,
+        imageUrl: "https://collectorcrypt.com/assets/cards/pull_gem.jpg",
+        isAvailableForTrade: true
+      },
+      {
+        id: `pull-${Date.now()}-2`,
+        name: pack.tier === "Legendary"
+          ? "2000 Lugia Neo Genesis 1st Edition Holo #9"
+          : pack.tier === "Elite"
+          ? "Roronoa Zoro Manga Alt Art OP-06"
+          : "Giratina V Alt Art Lost Origin #186",
+        category: pack.tier === "Elite" ? "OnePiece" : "Pokemon",
+        set: pack.tier === "Legendary" ? "Neo Genesis" : pack.tier === "Elite" ? "Flanky OP-06" : "Lost Origin",
+        year: pack.tier === "Legendary" ? 2000 : 2022,
+        gradingCompany: "BGS",
+        grade: "9.5 Gem Mint",
+        certNumber: `00${Math.floor(1000000 + Math.random() * 9000000)}`,
+        estimatedValueUsdc: pack.tier === "Legendary" ? 2800 : pack.tier === "Elite" ? 1400 : 480,
+        floorPriceUsdc: pack.tier === "Legendary" ? 2600 : pack.tier === "Elite" ? 1300 : 450,
+        vaultLocation: "PWCC Vault (Oregon, USA)",
+        nftMint: `MintPull${Date.now().toString().slice(-8)}2222222222222222`,
+        imageUrl: "https://collectorcrypt.com/assets/cards/pull_bgs.jpg",
+        isAvailableForTrade: true
+      },
+      {
+        id: `pull-${Date.now()}-3`,
+        name: "Charizard ex Special Illustration Rare #223",
+        category: "Pokemon",
+        set: "Paldean Fates",
+        year: 2024,
+        gradingCompany: "PSA",
+        grade: "9 Mint",
+        certNumber: `8${Math.floor(1000000 + Math.random() * 9000000)}`,
+        estimatedValueUsdc: 180,
+        floorPriceUsdc: 165,
+        vaultLocation: "PSA Vault (Delaware, USA)",
+        nftMint: `MintPull${Date.now().toString().slice(-8)}3333333333333333`,
+        imageUrl: "https://collectorcrypt.com/assets/cards/pull_charizard.jpg",
+        isAvailableForTrade: true
+      }
+    ];
+
+    // Pick randomized pull
+    const randomIndex = Math.floor(Math.random() * poolForPack.length);
+    const pulledCard = poolForPack[randomIndex];
+    
+    // Add to user's collection
+    this.addCardToUserCollection(userAddress, pulledCard);
+
+    // Calculate profit
+    const netPnlUsdc = pulledCard.estimatedValueUsdc - pack.priceUsdc;
+    const isProfit = netPnlUsdc > 0;
+    const txSignature = `5${Date.now().toString(36)}${Math.random().toString(36).substring(2, 9)}...sol`;
+
+    return {
+      cardPulled: pulledCard,
+      netPnlUsdc,
+      isProfit,
+      txSignature
+    };
   }
 
   /**

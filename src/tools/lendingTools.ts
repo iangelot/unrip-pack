@@ -3,9 +3,12 @@ import { CollectorCryptService } from "../services/collectorCrypt.js";
 import { PayBoxBridge } from "../services/payboxBridge.js";
 import { CONFIG } from "../config.js";
 
+import { AccountService } from "../services/accountService.js";
+
 export function registerLendingTools(
   server: any,
-  ccService: CollectorCryptService
+  ccService: CollectorCryptService,
+  accountService: AccountService
 ) {
   // Tool: get_lending_terms
   server.tool(
@@ -52,14 +55,15 @@ export function registerLendingTools(
   // Tool: prepare_card_loan
   server.tool(
     "prepare_card_loan",
-    "Prepare transaction payload to deposit a card NFT into the Collector Crypt lending escrow and borrow USDC into the user's PayBox address.",
+    "Prepare transaction payload to deposit a card NFT into the Collector Crypt lending escrow and borrow USDC into your account.",
     {
-      userAddress: z.string().describe("User's Solana wallet address / PayBox address"),
       cardId: z.string().describe("Card ID to use as collateral"),
       borrowAmountUsdc: z.number().positive().describe("Amount of USDC to borrow (must not exceed max LTV)"),
-      loanDurationDays: z.enum(["30", "60", "90", "180"]).describe("Duration of the loan in days")
+      loanDurationDays: z.enum(["30", "60", "90", "180"]).describe("Duration of the loan in days"),
+      userAddress: z.string().optional().describe("Optional explicit Solana wallet address. Defaults to connected session wallet.")
     },
     async (args: any) => {
+      const activeAddress = accountService.getActiveAddress(args.userAddress);
       const card = ccService.getCardById(args.cardId);
       if (!card) {
         return {

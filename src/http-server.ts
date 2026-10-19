@@ -4,6 +4,8 @@ import crypto from "crypto";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { createCollectorCryptServer } from "./server.js";
+import { SolanaService } from "./services/solana.js";
+import { AccountService } from "./services/accountService.js";
 
 export function startHttpServer(port: number = 3000) {
   const app = express();
@@ -24,6 +26,10 @@ export function startHttpServer(port: number = 3000) {
   }));
 
   app.use(express.json({ limit: "10mb" }));
+
+  // Shared account service for live wallet state and session persistence
+  const solanaService = new SolanaService();
+  const sharedAccountService = new AccountService(solanaService);
 
   // In-memory sessions map for Streamable HTTP transport
   const streamableSessions = new Map<string, StreamableHTTPServerTransport>();
@@ -108,7 +114,7 @@ MCP Server URL: https://${host}/mcp
         }
       };
 
-      const server = createCollectorCryptServer();
+      const server = createCollectorCryptServer(sharedAccountService);
       await server.connect(transport);
       streamableSessions.set(newSessionId, transport);
     }
@@ -128,7 +134,7 @@ MCP Server URL: https://${host}/mcp
   // =========================================================================
   app.get("/sse", async (_req: Request, res: Response) => {
     console.log("[Legacy SSE] Client connecting to /sse...");
-    const server = createCollectorCryptServer();
+    const server = createCollectorCryptServer(sharedAccountService);
     const transport = new SSEServerTransport("/messages", res);
 
     const sessionId = transport.sessionId;
