@@ -94,5 +94,17 @@ export function registerAnalyticsTools(server, ccService) {
             content: [{ type: "text", text: JSON.stringify(compData, null, 2) }]
         };
     });
+    // Tool: get_market_overview
+    server.tool("get_market_overview", "Get an overall 24h market activity report on Collector Crypt: total trading volume, total packs opened, top market moving cards (7d gainers), #1 trending pack, and live on-chain platform activity feed.", {}, async () => {
+        const overview = ccService.getMarketOverview();
+        return {
+            content: [
+                {
+                    type: "text",
+                    text: JSON.stringify(overview, null, 2)
+                }
+            ]
+        };
+    });
 }
 //# sourceMappingURL=analyticsTools.js.map

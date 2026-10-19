@@ -11,10 +11,28 @@ export function registerGachaTools(
   solanaService: SolanaService,
   accountService: AccountService
 ) {
-  // Tool 1: get_pack_drops
+  // Tool 1: get_trending_packs (Specifically answers "whats the most trending pack on the market")
+  server.tool(
+    "get_trending_packs",
+    "Identify the most trending, highest velocity, and popular Gacha packs on the market. Returns #1 trending pack, 24h pack opening volume, popularity ranking, trending score (0-100), and recent grail pulls.",
+    {},
+    async () => {
+      const trending = ccService.getTrendingPacks();
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(trending, null, 2)
+          }
+        ]
+      };
+    }
+  );
+
+  // Tool 2: get_pack_drops
   server.tool(
     "get_pack_drops",
-    "List all active Gacha packs and mystery card drops on Collector Crypt, including pricing in USDC and $CARDS, rarity odds, remaining supply, and top grail prizes.",
+    "List all active Gacha packs and mystery card drops on Collector Crypt, including pricing in USDC and $CARDS, popularity ranking, trending badges, rarity odds, remaining supply, and top grail prizes.",
     {},
     async () => {
       const packs = ccService.getPackDrops();
@@ -28,6 +46,7 @@ export function registerGachaTools(
       };
     }
   );
+
 
   // Tool 2: open_gacha_pack (Direct execution with pack opening result & pulled card)
   server.tool(

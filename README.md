@@ -81,7 +81,7 @@ https://paybox-collectorcrypt-mcp.onrender.com/mcp
 
 ---
 
-## 🧰 Complete MCP Tool Matrix (23 Tools)
+## 🧰 Complete MCP Tool Matrix (25 Tools)
 
 | Tool | Category | Execution Type | Description |
 | :--- | :--- | :--- | :--- |
@@ -92,10 +92,14 @@ https://paybox-collectorcrypt-mcp.onrender.com/mcp
 | `set_spend_limits` | Security | Direct | Configure per-tx spend cap, daily spend limit, and passkey prompt threshold. |
 | `get_transactions` | History | Paginated | List recent transaction records, block explorer links, and status. |
 | `get_transaction_status` | History | Lookup | Check on-chain confirmation status for any transaction signature. |
+| `get_trending_packs` | Gacha | Query | Identify #1 most trending pack, popularity ranking, 24h packs opened, and recent pulls. |
 | `open_gacha_pack` | Gacha | Direct | Direct pack opening: rolls randomized pull, reveals card + PSA grade + market value, and adds card to your vault. |
 | `get_pack_drops` | Gacha | Query | Browse active mystery packs, pricing, remaining supply, and grail odds. |
 | `get_pack_history` | Gacha | Paginated | All-time opened packs, pulled cards, and net PnL / ROI tracking. |
 | `prepare_buy_gacha_pack` | Gacha | Prepare | Construct transaction payload for external PayBox `request_payment`. |
+| `get_market_overview` | Analytics | Query | 24h platform trading volume, top market moving cards (7d gainers), and live on-chain pull feed. |
+| `calculate_pack_ev` | Analytics | Math | Calculate statistical Expected Value (EV), house edge, and ROI for any pack. |
+| `get_card_market_comps` | Analytics | Historical | Historical auction comps (Heritage, PWCC, Goldin) and PSA population scarcity reports. |
 | `get_vault_inventory` | Vault | Search | Filter vaulted physical cards by franchise (Pokemon/Sports/OP/MTG), PSA grade, and price. |
 | `get_card_details` | Vault | Query | In-depth metadata, cert number, digital twin NFT mint, and vault facility. |
 | `get_user_collection` | Vault | Paginated | List tokenized card NFTs in your vault with pagination (`limit`, `offset`). |
@@ -108,6 +112,7 @@ https://paybox-collectorcrypt-mcp.onrender.com/mcp
 | `execute_card_loan` | DeFi | Direct | Lock card NFT in lending escrow and borrow USDC directly into your balance. |
 | `execute_token_swap` | Token | Direct | Swap USDC and $CARDS with slippage guardrails and immediate balance updates. |
 | `get_cards_token_info` | Token | Query | Live $CARDS token price, 24h change, market cap, and buyback fund. |
+
 
 ---
 

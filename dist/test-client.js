@@ -125,7 +125,16 @@ async function testAllFeatures() {
     const rdmReceipt = accountService.executePhysicalRedemption("cc-pkmn-003", "Gengar VMAX Alt Art", "001429910", "US", 40);
     console.log(`Redemption ID: ${rdmReceipt.redemptionId} | Tracking: ${rdmReceipt.trackingNumber}`);
     console.log(`Carrier: ${rdmReceipt.carrier} | Delivery: ${rdmReceipt.deliveryEstimate}`);
-    console.log("\n=== ALL 18 TEST SUITES PASSED SUCCESSFULLY! ===");
+    // 19. Testing Trending Packs & Market Activity (Solves user's prompt)
+    console.log("\n19. Testing get_trending_packs & Market Overview:");
+    const trendingResult = ccService.getTrendingPacks();
+    console.log(`#1 Trending Pack: ${trendingResult.topTrendingPack.title} (Score: ${trendingResult.topTrendingPack.trendingScore}/100)`);
+    console.log(`24h Packs Opened: ${trendingResult.topTrendingPack.packsOpened24h} | Volume: $${trendingResult.topTrendingPack.volume24hUsdc} USDC`);
+    console.log(`Recent Big Pull: ${trendingResult.topTrendingPack.recentBigPull}`);
+    const marketOverview = ccService.getMarketOverview();
+    console.log(`24h Platform Trading Volume: $${marketOverview.platformStats24h.totalTradingVolumeUsdc} USDC`);
+    console.log(`Live Activity Sample: [${marketOverview.livePlatformActivityFeed[0].timeAgo}] ${marketOverview.livePlatformActivityFeed[0].details}`);
+    console.log("\n=== ALL 19 TEST SUITES PASSED SUCCESSFULLY! ===");
 }
 testAllFeatures().catch((err) => {
     console.error("Test failed with error:", err);

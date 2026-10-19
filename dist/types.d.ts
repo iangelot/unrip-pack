@@ -33,6 +33,15 @@ export interface GachaPack {
         vintageOdds: string;
     };
     description: string;
+    popularityRank?: number;
+    trendingScore?: number;
+    badge?: string;
+    volume24hUsdc?: number;
+    packsOpened24h?: number;
+    selloutPercentage?: string;
+    recentBigPull?: string;
+    expectedValueUsdc?: number;
+    expectedRoiPercent?: string;
 }
 export interface BuybackQuote {
     cardId: string;

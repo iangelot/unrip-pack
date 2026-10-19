@@ -35,7 +35,17 @@ export interface GachaPack {
     vintageOdds: string; // e.g. "8.2%"
   };
   description: string;
+  popularityRank?: number; // e.g. 1 (#1 Most Trending)
+  trendingScore?: number; // e.g. 98.4 / 100
+  badge?: string; // e.g. "🔥 #1 MOST TRENDING", "⚡ HIGH VELOCITY", "👑 VINTAGE GRAILS"
+  volume24hUsdc?: number; // e.g. 48500
+  packsOpened24h?: number; // e.g. 312
+  selloutPercentage?: string; // e.g. "62.2% sold out"
+  recentBigPull?: string; // e.g. "Pulled 22m ago: Umbreon VMAX Moonbreon PSA 10 ($1,200)"
+  expectedValueUsdc?: number; // e.g. 48.5
+  expectedRoiPercent?: string; // e.g. "+38.6%"
 }
+
 
 export interface BuybackQuote {
   cardId: string;

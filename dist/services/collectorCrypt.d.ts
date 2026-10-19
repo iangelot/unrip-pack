@@ -52,6 +52,47 @@ export declare class CollectorCryptService {
      */
     getPackDrops(): GachaPack[];
     /**
+     * Get trending packs ranked by 24h popularity, volume, and pull activity
+     */
+    getTrendingPacks(): {
+        topTrendingPack: GachaPack;
+        rankedPacks: GachaPack[];
+        marketInsight: string;
+    };
+    /**
+     * Get comprehensive 24h market activity, live feed, and platform statistics
+     */
+    getMarketOverview(): {
+        platformStats24h: {
+            totalTradingVolumeUsdc: number;
+            totalPacksOpened24h: number;
+            activeTraders24h: number;
+            totalVaultedValueUsdc: number;
+        };
+        mostTrendingPack: {
+            title: string;
+            tier: string;
+            priceUsdc: number;
+            badge: string;
+            packsOpened24h: number;
+            recentBigPull: string;
+        };
+        topMarketMoversCards: {
+            name: string;
+            grade: string;
+            valueUsdc: number;
+            change7d: string;
+            category: string;
+        }[];
+        livePlatformActivityFeed: {
+            timeAgo: string;
+            action: string;
+            collector: string;
+            details: string;
+            verifiedOnSolana: boolean;
+        }[];
+    };
+    /**
      * Get specific Gacha pack by ID
      */
     getPackById(packId: string): GachaPack | undefined;
