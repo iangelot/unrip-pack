@@ -1,71 +1,95 @@
 import { PublicKey, Keypair } from "@solana/web3.js";
 import bs58 from "bs58";
+import { StorageService } from "./storageService.js";
 export class AccountService {
     activeAccount;
     packHistory = [];
     transactionHistory = [];
     solanaService;
     tokenAccountMap = new Map();
+    storage = StorageService.getInstance();
     constructor(solanaService) {
         this.solanaService = solanaService;
-        // Default pre-connected wallet session so the user can interact immediately
+        // Load or initialize default pre-connected wallet session
         const defaultAddress = "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU";
-        this.activeAccount = {
-            walletAddress: defaultAddress,
-            connectedVia: "PayBox MPC Vault",
-            isConnected: true,
-            balances: {
-                sol: 1.85,
-                usdc: 340.50,
-                cards: 12500
-            },
-            spendLimits: {
-                perTransactionCapUsd: 100,
-                dailySpendCapUsd: 500,
-                dailySpentSoFarUsd: 35,
-                requiresPasskeyAboveUsd: 50
-            },
-            createdAt: new Date(Date.now() - 86400000 * 7).toISOString(),
-            lastActive: new Date().toISOString()
-        };
-        // Pre-populate realistic pack opening history so "what have I opened" works immediately
-        this.packHistory.push({
-            id: "pack-open-hist-1",
-            packId: "pack-modern-heat",
-            packTitle: "Modern Alt-Art & Special Illustration Pack",
-            openedAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-            paidAmount: 35,
-            paidCurrency: "USDC",
-            isProfit: true,
-            netPnlUsdc: 415,
-            txSignature: "5KtPn8Y4zH1m...mock...tx1",
-            cardPulled: {
-                id: "cc-pkmn-003",
-                name: "Gengar VMAX Alternate Art Secret Rare #271",
-                category: "Pokemon",
-                set: "Fusion Strike",
-                year: 2021,
-                gradingCompany: "BGS",
-                grade: "9.5 Gem Mint",
-                certNumber: "001429910",
-                estimatedValueUsdc: 450,
-                floorPriceUsdc: 420,
-                vaultLocation: "PWCC Vault (Oregon, USA)",
-                nftMint: "GengarVMAXAlt111111111111111111111111111111",
-                imageUrl: "https://collectorcrypt.com/assets/cards/gengar_vmax.jpg",
-                isAvailableForTrade: true,
-                acquiredDate: new Date(Date.now() - 86400000 * 2).toISOString()
-            }
-        });
-        this.transactionHistory.push({
-            signature: "5KtPn8Y4zH1m...mock...tx1",
-            type: "PACK_OPEN",
-            status: "finalized",
-            timestamp: new Date(Date.now() - 86400000 * 2).toISOString(),
-            description: "Opened 1x Modern Alt-Art Pack for 35 USDC (Pulled PSA 9.5 Gengar VMAX)",
-            amountUsd: 35,
-            solanaExplorerUrl: "https://solscan.io/tx/5KtPn8Y4zH1m...mock...tx1"
-        });
+        const savedAccount = this.storage.getAccount(defaultAddress);
+        if (savedAccount) {
+            this.activeAccount = savedAccount;
+        }
+        else {
+            this.activeAccount = {
+                walletAddress: defaultAddress,
+                connectedVia: "PayBox MPC Vault",
+                isConnected: true,
+                balances: {
+                    sol: 1.85,
+                    usdc: 340.50,
+                    cards: 12500
+                },
+                spendLimits: {
+                    perTransactionCapUsd: 100,
+                    dailySpendCapUsd: 500,
+                    dailySpentSoFarUsd: 35,
+                    requiresPasskeyAboveUsd: 50
+                },
+                createdAt: new Date(Date.now() - 86400000 * 7).toISOString(),
+                lastActive: new Date().toISOString()
+            };
+            this.storage.saveAccount(this.activeAccount);
+        }
+        // Load or initialize pack opening history
+        const savedPacks = this.storage.getPackHistory();
+        if (savedPacks && savedPacks.length > 0) {
+            this.packHistory = savedPacks;
+        }
+        else {
+            this.packHistory = [{
+                    id: "pack-open-hist-1",
+                    packId: "pack-modern-heat",
+                    packTitle: "Modern Alt-Art & Special Illustration Pack",
+                    openedAt: new Date(Date.now() - 86400000 * 2).toISOString(),
+                    paidAmount: 35,
+                    paidCurrency: "USDC",
+                    isProfit: true,
+                    netPnlUsdc: 415,
+                    txSignature: "5KtPn8Y4zH1m...mock...tx1",
+                    cardPulled: {
+                        id: "cc-pkmn-003",
+                        name: "Gengar VMAX Alternate Art Secret Rare #271",
+                        category: "Pokemon",
+                        set: "Fusion Strike",
+                        year: 2021,
+                        gradingCompany: "BGS",
+                        grade: "9.5 Gem Mint",
+                        certNumber: "001429910",
+                        estimatedValueUsdc: 450,
+                        floorPriceUsdc: 420,
+                        vaultLocation: "PWCC Vault (Oregon, USA)",
+                        nftMint: "GengarVMAXAlt111111111111111111111111111111",
+                        imageUrl: "https://collectorcrypt.com/assets/cards/gengar_vmax.jpg",
+                        isAvailableForTrade: true,
+                        acquiredDate: new Date(Date.now() - 86400000 * 2).toISOString()
+                    }
+                }];
+            this.storage.savePackHistory(this.packHistory);
+        }
+        // Load or initialize transaction history
+        const savedTxs = this.storage.getTransactionHistory();
+        if (savedTxs && savedTxs.length > 0) {
+            this.transactionHistory = savedTxs;
+        }
+        else {
+            this.transactionHistory = [{
+                    signature: "5KtPn8Y4zH1m...mock...tx1",
+                    type: "PACK_OPEN",
+                    status: "finalized",
+                    timestamp: new Date(Date.now() - 86400000 * 2).toISOString(),
+                    description: "Opened 1x Modern Alt-Art Pack for 35 USDC (Pulled PSA 9.5 Gengar VMAX)",
+                    amountUsd: 35,
+                    solanaExplorerUrl: "https://solscan.io/tx/5KtPn8Y4zH1m...mock...tx1"
+                }];
+            this.storage.saveTransactionHistory(this.transactionHistory);
+        }
     }
     /**
      * Validate if a string is a valid Solana Base58 public key
@@ -105,6 +129,7 @@ export class AccountService {
             lastActive: new Date().toISOString()
         };
         this.activeAccount = newAccount;
+        this.storage.saveAccount(newAccount);
         const txSig = `5gen${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}...sol`;
         this.recordTransaction({
             signature: txSig,
@@ -143,6 +168,7 @@ export class AccountService {
         catch {
             // Keep existing balance cache if network RPC is unavailable
         }
+        this.storage.saveAccount(this.activeAccount);
         return this.activeAccount;
     }
     /**
@@ -187,6 +213,7 @@ export class AccountService {
             ...this.activeAccount.spendLimits,
             ...updates
         };
+        this.storage.saveAccount(this.activeAccount);
         return this.activeAccount.spendLimits;
     }
     /**
@@ -218,6 +245,7 @@ export class AccountService {
      */
     recordSpend(amountUsd) {
         this.activeAccount.spendLimits.dailySpentSoFarUsd += amountUsd;
+        this.storage.saveAccount(this.activeAccount);
     }
     /**
      * Record an opened pack and add to history
@@ -234,6 +262,9 @@ export class AccountService {
             amountUsd: record.paidCurrency === "USDC" ? record.paidAmount : record.paidAmount * 0.0205,
             solanaExplorerUrl: `https://solscan.io/tx/${record.txSignature}`
         });
+        this.storage.savePackHistory(this.packHistory);
+        this.storage.saveTransactionHistory(this.transactionHistory);
+        this.storage.saveAccount(this.activeAccount);
     }
     /**
      * Get pack history with optional pagination
@@ -249,6 +280,7 @@ export class AccountService {
      */
     recordTransaction(tx) {
         this.transactionHistory.unshift(tx);
+        this.storage.saveTransactionHistory(this.transactionHistory);
     }
     /**
      * Get transaction history with pagination
@@ -282,12 +314,14 @@ export class AccountService {
      */
     creditBalance(amountUsdc) {
         this.activeAccount.balances.usdc += amountUsdc;
+        this.storage.saveAccount(this.activeAccount);
     }
     /**
      * Debit user balance on pack buy, loan repayment, or fee
      */
     debitBalance(amountUsdc) {
         this.activeAccount.balances.usdc = Math.max(0, this.activeAccount.balances.usdc - amountUsdc);
+        this.storage.saveAccount(this.activeAccount);
     }
     /**
      * Execute collateralized DeFi loan directly

@@ -1,5 +1,8 @@
 import { VaultedCard, GachaPack, BuybackQuote, PhysicalRedemptionQuote } from "../types.js";
+import { ProvablyFairResult } from "./provablyFairService.js";
 export declare class CollectorCryptService {
+    private storage;
+    private provablyFair;
     private vaultedInventory;
     private activePacks;
     /**
@@ -39,13 +42,14 @@ export declare class CollectorCryptService {
      */
     removeCardFromUserCollection(userAddress: string, cardId: string): VaultedCard;
     /**
-     * Execute randomized Gacha pack opening with authentic odds
+     * Execute provably fair Gacha pack opening with cryptographic HMAC-SHA256 outcome
      */
-    openGachaPack(packId: string, userAddress: string): {
+    openGachaPack(packId: string, userAddress: string, clientSeed?: string): {
         cardPulled: VaultedCard;
         netPnlUsdc: number;
         isProfit: boolean;
         txSignature: string;
+        fairProof: ProvablyFairResult;
     };
     /**
      * List available Gacha packs

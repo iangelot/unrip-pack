@@ -9,6 +9,7 @@ import {
   VaultedCard
 } from "../types.js";
 import { SolanaService } from "./solana.js";
+import { StorageService } from "./storageService.js";
 
 export class AccountService {
   private activeAccount: UserAccount;
@@ -16,70 +17,90 @@ export class AccountService {
   private transactionHistory: TransactionRecord[] = [];
   private solanaService: SolanaService;
   private tokenAccountMap = new Map<string, UserAccount>();
+  private storage = StorageService.getInstance();
 
   constructor(solanaService: SolanaService) {
     this.solanaService = solanaService;
 
-    // Default pre-connected wallet session so the user can interact immediately
+    // Load or initialize default pre-connected wallet session
     const defaultAddress = "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU";
-    this.activeAccount = {
-      walletAddress: defaultAddress,
-      connectedVia: "PayBox MPC Vault",
-      isConnected: true,
-      balances: {
-        sol: 1.85,
-        usdc: 340.50,
-        cards: 12500
-      },
-      spendLimits: {
-        perTransactionCapUsd: 100,
-        dailySpendCapUsd: 500,
-        dailySpentSoFarUsd: 35,
-        requiresPasskeyAboveUsd: 50
-      },
-      createdAt: new Date(Date.now() - 86400000 * 7).toISOString(),
-      lastActive: new Date().toISOString()
-    };
+    const savedAccount = this.storage.getAccount(defaultAddress);
+    if (savedAccount) {
+      this.activeAccount = savedAccount;
+    } else {
+      this.activeAccount = {
+        walletAddress: defaultAddress,
+        connectedVia: "PayBox MPC Vault",
+        isConnected: true,
+        balances: {
+          sol: 1.85,
+          usdc: 340.50,
+          cards: 12500
+        },
+        spendLimits: {
+          perTransactionCapUsd: 100,
+          dailySpendCapUsd: 500,
+          dailySpentSoFarUsd: 35,
+          requiresPasskeyAboveUsd: 50
+        },
+        createdAt: new Date(Date.now() - 86400000 * 7).toISOString(),
+        lastActive: new Date().toISOString()
+      };
+      this.storage.saveAccount(this.activeAccount);
+    }
 
-    // Pre-populate realistic pack opening history so "what have I opened" works immediately
-    this.packHistory.push({
-      id: "pack-open-hist-1",
-      packId: "pack-modern-heat",
-      packTitle: "Modern Alt-Art & Special Illustration Pack",
-      openedAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-      paidAmount: 35,
-      paidCurrency: "USDC",
-      isProfit: true,
-      netPnlUsdc: 415,
-      txSignature: "5KtPn8Y4zH1m...mock...tx1",
-      cardPulled: {
-        id: "cc-pkmn-003",
-        name: "Gengar VMAX Alternate Art Secret Rare #271",
-        category: "Pokemon",
-        set: "Fusion Strike",
-        year: 2021,
-        gradingCompany: "BGS",
-        grade: "9.5 Gem Mint",
-        certNumber: "001429910",
-        estimatedValueUsdc: 450,
-        floorPriceUsdc: 420,
-        vaultLocation: "PWCC Vault (Oregon, USA)",
-        nftMint: "GengarVMAXAlt111111111111111111111111111111",
-        imageUrl: "https://collectorcrypt.com/assets/cards/gengar_vmax.jpg",
-        isAvailableForTrade: true,
-        acquiredDate: new Date(Date.now() - 86400000 * 2).toISOString()
-      }
-    });
+    // Load or initialize pack opening history
+    const savedPacks = this.storage.getPackHistory();
+    if (savedPacks && savedPacks.length > 0) {
+      this.packHistory = savedPacks;
+    } else {
+      this.packHistory = [{
+        id: "pack-open-hist-1",
+        packId: "pack-modern-heat",
+        packTitle: "Modern Alt-Art & Special Illustration Pack",
+        openedAt: new Date(Date.now() - 86400000 * 2).toISOString(),
+        paidAmount: 35,
+        paidCurrency: "USDC",
+        isProfit: true,
+        netPnlUsdc: 415,
+        txSignature: "5KtPn8Y4zH1m...mock...tx1",
+        cardPulled: {
+          id: "cc-pkmn-003",
+          name: "Gengar VMAX Alternate Art Secret Rare #271",
+          category: "Pokemon",
+          set: "Fusion Strike",
+          year: 2021,
+          gradingCompany: "BGS",
+          grade: "9.5 Gem Mint",
+          certNumber: "001429910",
+          estimatedValueUsdc: 450,
+          floorPriceUsdc: 420,
+          vaultLocation: "PWCC Vault (Oregon, USA)",
+          nftMint: "GengarVMAXAlt111111111111111111111111111111",
+          imageUrl: "https://collectorcrypt.com/assets/cards/gengar_vmax.jpg",
+          isAvailableForTrade: true,
+          acquiredDate: new Date(Date.now() - 86400000 * 2).toISOString()
+        }
+      }];
+      this.storage.savePackHistory(this.packHistory);
+    }
 
-    this.transactionHistory.push({
-      signature: "5KtPn8Y4zH1m...mock...tx1",
-      type: "PACK_OPEN",
-      status: "finalized",
-      timestamp: new Date(Date.now() - 86400000 * 2).toISOString(),
-      description: "Opened 1x Modern Alt-Art Pack for 35 USDC (Pulled PSA 9.5 Gengar VMAX)",
-      amountUsd: 35,
-      solanaExplorerUrl: "https://solscan.io/tx/5KtPn8Y4zH1m...mock...tx1"
-    });
+    // Load or initialize transaction history
+    const savedTxs = this.storage.getTransactionHistory();
+    if (savedTxs && savedTxs.length > 0) {
+      this.transactionHistory = savedTxs;
+    } else {
+      this.transactionHistory = [{
+        signature: "5KtPn8Y4zH1m...mock...tx1",
+        type: "PACK_OPEN",
+        status: "finalized",
+        timestamp: new Date(Date.now() - 86400000 * 2).toISOString(),
+        description: "Opened 1x Modern Alt-Art Pack for 35 USDC (Pulled PSA 9.5 Gengar VMAX)",
+        amountUsd: 35,
+        solanaExplorerUrl: "https://solscan.io/tx/5KtPn8Y4zH1m...mock...tx1"
+      }];
+      this.storage.saveTransactionHistory(this.transactionHistory);
+    }
   }
 
   /**
@@ -126,6 +147,7 @@ export class AccountService {
     };
 
     this.activeAccount = newAccount;
+    this.storage.saveAccount(newAccount);
 
     const txSig = `5gen${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}...sol`;
     this.recordTransaction({
@@ -169,6 +191,7 @@ export class AccountService {
       // Keep existing balance cache if network RPC is unavailable
     }
 
+    this.storage.saveAccount(this.activeAccount);
     return this.activeAccount;
   }
 
@@ -218,6 +241,7 @@ export class AccountService {
       ...this.activeAccount.spendLimits,
       ...updates
     };
+    this.storage.saveAccount(this.activeAccount);
     return this.activeAccount.spendLimits;
   }
 
@@ -258,6 +282,7 @@ export class AccountService {
    */
   public recordSpend(amountUsd: number) {
     this.activeAccount.spendLimits.dailySpentSoFarUsd += amountUsd;
+    this.storage.saveAccount(this.activeAccount);
   }
 
   /**
@@ -276,6 +301,10 @@ export class AccountService {
       amountUsd: record.paidCurrency === "USDC" ? record.paidAmount : record.paidAmount * 0.0205,
       solanaExplorerUrl: `https://solscan.io/tx/${record.txSignature}`
     });
+
+    this.storage.savePackHistory(this.packHistory);
+    this.storage.saveTransactionHistory(this.transactionHistory);
+    this.storage.saveAccount(this.activeAccount);
   }
 
   /**
@@ -293,6 +322,7 @@ export class AccountService {
    */
   public recordTransaction(tx: TransactionRecord) {
     this.transactionHistory.unshift(tx);
+    this.storage.saveTransactionHistory(this.transactionHistory);
   }
 
   /**
@@ -334,6 +364,7 @@ export class AccountService {
    */
   public creditBalance(amountUsdc: number) {
     this.activeAccount.balances.usdc += amountUsdc;
+    this.storage.saveAccount(this.activeAccount);
   }
 
   /**
@@ -341,6 +372,7 @@ export class AccountService {
    */
   public debitBalance(amountUsdc: number) {
     this.activeAccount.balances.usdc = Math.max(0, this.activeAccount.balances.usdc - amountUsdc);
+    this.storage.saveAccount(this.activeAccount);
   }
 
   /**

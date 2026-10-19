@@ -135,22 +135,72 @@ export function registerAccountTools(
   // Tool 4: set_spend_limits
   server.tool(
     "set_spend_limits",
-    "Configure safety limits on money-moving actions: set maximum per-transaction spend, daily 24h spend cap, and passkey confirmation thresholds.",
+    "Configure safety limits on money-moving actions: set maximum per-transaction spend, daily 24h spend cap, and passkey confirmation thresholds. Enforces hard safety ceilings ($500/tx, $2,000/day) and requires human confirmationCode to increase limits.",
     {
-      perTransactionCapUsd: z.number().positive().optional().describe("Maximum allowed spend for a single transaction in USD"),
-      dailySpendCapUsd: z.number().positive().optional().describe("Maximum total spend allowed in a 24-hour window in USD"),
-      requiresPasskeyAboveUsd: z.number().positive().optional().describe("Threshold above which biometric Passkey confirmation is strictly required")
+      perTransactionCapUsd: z.number().positive().optional().describe("Maximum allowed spend for a single transaction in USD (Hard ceiling: $500)"),
+      dailySpendCapUsd: z.number().positive().optional().describe("Maximum total spend allowed in a 24-hour window in USD (Hard ceiling: $2,000)"),
+      requiresPasskeyAboveUsd: z.number().positive().optional().describe("Threshold above which biometric Passkey confirmation is strictly required"),
+      confirmationCode: z.string().optional().describe("Security confirmation code. Must be 'CONFIRM_LIMIT_INCREASE' if increasing any spend limits.")
     },
     async (args: any) => {
-      const updated = accountService.updateSpendLimits(args);
+      const current = accountService.getAccount().spendLimits;
+      const MAX_PER_TX_CAP_USD = 500;
+      const MAX_DAILY_CAP_USD = 2000;
+
+      // 1. Enforce hard platform ceilings to prevent catastrophic unauthorized drain
+      if (args.perTransactionCapUsd !== undefined && args.perTransactionCapUsd > MAX_PER_TX_CAP_USD) {
+        return {
+          content: [{
+            type: "text",
+            text: `Error: Hard safety ceiling exceeded. Maximum allowed per-transaction cap is $${MAX_PER_TX_CAP_USD} USD on public tier to protect your wallet against prompt injection exploits.`
+          }],
+          isError: true
+        };
+      }
+
+      if (args.dailySpendCapUsd !== undefined && args.dailySpendCapUsd > MAX_DAILY_CAP_USD) {
+        return {
+          content: [{
+            type: "text",
+            text: `Error: Hard safety ceiling exceeded. Maximum allowed 24h spend cap is $${MAX_DAILY_CAP_USD} USD on public tier.`
+          }],
+          isError: true
+        };
+      }
+
+      // 2. Prevent autonomous prompt injection: Raising limits requires explicit human confirmation
+      const isIncreasing = 
+        (args.perTransactionCapUsd !== undefined && args.perTransactionCapUsd > current.perTransactionCapUsd) ||
+        (args.dailySpendCapUsd !== undefined && args.dailySpendCapUsd > current.dailySpendCapUsd);
+
+      if (isIncreasing && args.confirmationCode !== "CONFIRM_LIMIT_INCREASE") {
+        return {
+          content: [{
+            type: "text",
+            text: `Security Challenge: Raising your spending limits requires explicit user confirmation to prevent autonomous AI prompt injection. Please call 'set_spend_limits' again with confirmationCode: "CONFIRM_LIMIT_INCREASE".`
+          }],
+          isError: true
+        };
+      }
+
+      const updated = accountService.updateSpendLimits({
+        perTransactionCapUsd: args.perTransactionCapUsd,
+        dailySpendCapUsd: args.dailySpendCapUsd,
+        requiresPasskeyAboveUsd: args.requiresPasskeyAboveUsd
+      });
+
       return {
         content: [
           {
             type: "text",
             text: JSON.stringify({
               status: "success",
-              message: "Spend safety limits updated.",
-              currentLimits: updated
+              message: "Spend safety limits updated and persisted.",
+              currentLimits: updated,
+              safetyCeilings: {
+                maxAllowedPerTxUsd: MAX_PER_TX_CAP_USD,
+                maxAllowedDailyUsd: MAX_DAILY_CAP_USD
+              }
             }, null, 2)
           }
         ]

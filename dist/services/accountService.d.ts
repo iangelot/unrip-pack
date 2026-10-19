@@ -6,6 +6,7 @@ export declare class AccountService {
     private transactionHistory;
     private solanaService;
     private tokenAccountMap;
+    private storage;
     constructor(solanaService: SolanaService);
     /**
      * Validate if a string is a valid Solana Base58 public key

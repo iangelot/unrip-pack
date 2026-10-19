@@ -1,5 +1,9 @@
 import { CONFIG } from "../config.js";
+import { ProvablyFairService } from "./provablyFairService.js";
+import { StorageService } from "./storageService.js";
 export class CollectorCryptService {
+    storage = StorageService.getInstance();
+    provablyFair = new ProvablyFairService();
     // Curated live database of tokenized cards securely vaulted in partner facilities (PSA/PWCC/ALT)
     vaultedInventory = [
         {
@@ -252,33 +256,41 @@ export class CollectorCryptService {
         }
         return undefined;
     }
-    // Dynamic in-memory user portfolio cards
+    // Dynamic user portfolio cards backed by StorageService
     userCardPortfolios = new Map();
     /**
      * Get cards held by a user's address with pagination support
      */
     getUserVaultCards(userAddress, limit = 10, offset = 0) {
         if (!this.userCardPortfolios.has(userAddress)) {
-            // Initialize with default starter card for connected wallet
-            const starterCard = {
-                id: "cc-pkmn-003",
-                name: "Gengar VMAX Alternate Art Secret Rare #271",
-                category: "Pokemon",
-                set: "Fusion Strike",
-                year: 2021,
-                gradingCompany: "BGS",
-                grade: "9.5 Gem Mint",
-                certNumber: "001429910",
-                estimatedValueUsdc: 450,
-                floorPriceUsdc: 420,
-                vaultLocation: "PWCC Vault (Oregon, USA)",
-                nftMint: "GengarVMAXAlt111111111111111111111111111111",
-                ownerAddress: userAddress,
-                imageUrl: "https://collectorcrypt.com/assets/cards/gengar_vmax.jpg",
-                isAvailableForTrade: true,
-                acquiredDate: new Date(Date.now() - 86400000 * 2).toISOString()
-            };
-            this.userCardPortfolios.set(userAddress, [starterCard]);
+            // First try to load from persistent storage
+            const persisted = this.storage.getUserCards(userAddress);
+            if (persisted && persisted.length > 0) {
+                this.userCardPortfolios.set(userAddress, persisted);
+            }
+            else {
+                // Initialize with default starter card for connected wallet
+                const starterCard = {
+                    id: "cc-pkmn-003",
+                    name: "Gengar VMAX Alternate Art Secret Rare #271",
+                    category: "Pokemon",
+                    set: "Fusion Strike",
+                    year: 2021,
+                    gradingCompany: "BGS",
+                    grade: "9.5 Gem Mint",
+                    certNumber: "001429910",
+                    estimatedValueUsdc: 450,
+                    floorPriceUsdc: 420,
+                    vaultLocation: "PWCC Vault (Oregon, USA)",
+                    nftMint: "GengarVMAXAlt111111111111111111111111111111",
+                    ownerAddress: userAddress,
+                    imageUrl: "https://collectorcrypt.com/assets/cards/gengar_vmax.jpg",
+                    isAvailableForTrade: true,
+                    acquiredDate: new Date(Date.now() - 86400000 * 2).toISOString()
+                };
+                this.userCardPortfolios.set(userAddress, [starterCard]);
+                this.storage.saveUserCards(userAddress, [starterCard]);
+            }
         }
         const cards = this.userCardPortfolios.get(userAddress);
         const paginated = cards.slice(offset, offset + limit);
@@ -295,29 +307,36 @@ export class CollectorCryptService {
      */
     addCardToUserCollection(userAddress, card) {
         if (!this.userCardPortfolios.has(userAddress)) {
-            this.userCardPortfolios.set(userAddress, []);
+            const persisted = this.storage.getUserCards(userAddress);
+            this.userCardPortfolios.set(userAddress, persisted || []);
         }
         const collection = this.userCardPortfolios.get(userAddress);
         card.ownerAddress = userAddress;
         card.acquiredDate = new Date().toISOString();
         collection.unshift(card);
+        this.storage.saveUserCards(userAddress, collection);
     }
     /**
      * Remove card on buyback or physical redemption burn
      */
     removeCardFromUserCollection(userAddress, cardId) {
+        if (!this.userCardPortfolios.has(userAddress)) {
+            const persisted = this.storage.getUserCards(userAddress);
+            this.userCardPortfolios.set(userAddress, persisted || []);
+        }
         const collection = this.userCardPortfolios.get(userAddress) || [];
         const index = collection.findIndex(c => c.id === cardId || c.nftMint === cardId);
         if (index === -1) {
             throw new Error(`Card "${cardId}" not found in your vault collection.`);
         }
         const [removed] = collection.splice(index, 1);
+        this.storage.saveUserCards(userAddress, collection);
         return removed;
     }
     /**
-     * Execute randomized Gacha pack opening with authentic odds
+     * Execute provably fair Gacha pack opening with cryptographic HMAC-SHA256 outcome
      */
-    openGachaPack(packId, userAddress) {
+    openGachaPack(packId, userAddress, clientSeed) {
         const pack = this.getPackById(packId);
         if (!pack) {
             throw new Error(`Pack "${packId}" not found.`);
@@ -381,8 +400,8 @@ export class CollectorCryptService {
                 isAvailableForTrade: true
             }
         ];
-        // Pick randomized pull
-        const randomIndex = Math.floor(Math.random() * poolForPack.length);
+        // Pick cryptographically secure provably fair roll
+        const { index: randomIndex, fairProof } = this.provablyFair.generateFairRoll(poolForPack.length, clientSeed);
         const pulledCard = poolForPack[randomIndex];
         // Add to user's collection
         this.addCardToUserCollection(userAddress, pulledCard);
@@ -394,7 +413,8 @@ export class CollectorCryptService {
             cardPulled: pulledCard,
             netPnlUsdc,
             isProfit,
-            txSignature
+            txSignature,
+            fairProof
         };
     }
     /**
