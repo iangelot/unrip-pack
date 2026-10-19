@@ -45,7 +45,7 @@ export declare class AccountService {
      */
     updateSpendLimits(updates: Partial<SpendLimits>): SpendLimits;
     /**
-     * Check and enforce spend limits before moving funds
+     * Check and enforce spend limits and actual wallet balance before moving real funds
      */
     verifySpendSafety(amountUsd: number): {
         allowed: boolean;

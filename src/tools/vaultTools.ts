@@ -125,15 +125,34 @@ export function registerVaultTools(
     async (args: any) => {
       try {
         const senderAddress = accountService.getActiveAddress(args.userAddress);
-        if (!accountService.validateSolanaAddress(args.recipientAddress)) {
+        const recipientTrimmed = args.recipientAddress.trim();
+
+        if (senderAddress === recipientTrimmed) {
           return {
-            content: [{ type: "text", text: `Error: Invalid recipient Solana address "${args.recipientAddress}".` }],
+            content: [{ type: "text", text: "Error: Sender address and recipient address cannot be identical." }],
+            isError: true
+          };
+        }
+
+        if (!accountService.validateSolanaAddress(recipientTrimmed)) {
+          return {
+            content: [{ type: "text", text: `Error: Invalid recipient Solana address "${recipientTrimmed}".` }],
             isError: true
           };
         }
 
         const removedCard = ccService.removeCardFromUserCollection(senderAddress, args.cardId);
-        ccService.addCardToUserCollection(args.recipientAddress, removedCard);
+
+        // Security check: Cannot transfer card locked in loan escrow
+        if (!removedCard.isAvailableForTrade) {
+          ccService.addCardToUserCollection(senderAddress, removedCard);
+          return {
+            content: [{ type: "text", text: `Error: Card "${removedCard.name}" is currently locked in lending escrow and cannot be transferred.` }],
+            isError: true
+          };
+        }
+
+        ccService.addCardToUserCollection(recipientTrimmed, removedCard);
 
         const txSig = `5xfer${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}...sol`;
         accountService.recordTransaction({

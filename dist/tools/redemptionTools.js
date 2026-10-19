@@ -34,6 +34,14 @@ export function registerRedemptionTools(server, ccService, accountService) {
             const quote = ccService.getInstantBuybackQuote(args.cardId);
             // Remove card from user's collection
             const removed = ccService.removeCardFromUserCollection(activeAddress, quote.cardId);
+            // Security Check: Verify card is not locked in escrow as loan collateral
+            if (!removed.isAvailableForTrade) {
+                ccService.addCardToUserCollection(activeAddress, removed);
+                return {
+                    content: [{ type: "text", text: `Error: Card "${removed.name}" is locked in lending escrow as loan collateral and cannot be sold.` }],
+                    isError: true
+                };
+            }
             // Credit user's account balance
             accountService.creditBalance(quote.instantPayoutUsdc);
             // Generate transaction signature and log history
@@ -134,9 +142,25 @@ export function registerRedemptionTools(server, ccService, accountService) {
         try {
             const activeAddress = accountService.getActiveAddress(args.userAddress);
             const quote = ccService.getPhysicalRedemptionQuote(args.cardId, args.destinationCountry);
-            // Remove card from digital vault collection (NFT is burned)
+            // 1. Financial check FIRST before touching the user's card collection
+            const safetyCheck = accountService.verifySpendSafety(quote.totalCostUsdc);
+            if (!safetyCheck.allowed) {
+                return {
+                    content: [{ type: "text", text: `Redemption Blocked: ${safetyCheck.errorReason}` }],
+                    isError: true
+                };
+            }
+            // 2. Remove card from digital vault collection (NFT is burned)
             const removed = ccService.removeCardFromUserCollection(activeAddress, quote.cardId);
-            // Execute redemption in account service
+            // Check if card is locked in loan escrow
+            if (!removed.isAvailableForTrade) {
+                ccService.addCardToUserCollection(activeAddress, removed);
+                return {
+                    content: [{ type: "text", text: `Error: Card "${removed.name}" is locked in lending escrow as loan collateral and cannot be physically redeemed.` }],
+                    isError: true
+                };
+            }
+            // 3. Execute redemption in account service
             const receipt = accountService.executePhysicalRedemption(removed.id, removed.name, quote.certNumber, args.destinationCountry, quote.totalCostUsdc);
             return {
                 content: [

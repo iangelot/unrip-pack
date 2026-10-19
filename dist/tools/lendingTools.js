@@ -95,10 +95,17 @@ export function registerLendingTools(server, ccService, accountService) {
     }, async (args) => {
         try {
             const activeAddress = accountService.getActiveAddress(args.userAddress);
-            const card = ccService.getCardById(args.cardId);
+            const userCards = ccService.getUserVaultCards(activeAddress, 100);
+            const card = userCards.cards.find(c => c.id === args.cardId || c.nftMint === args.cardId);
             if (!card) {
                 return {
-                    content: [{ type: "text", text: `Error: Card "${args.cardId}" not found in vault.` }],
+                    content: [{ type: "text", text: `Error: Card "${args.cardId}" is not in your vault collection. You can only borrow against cards you own.` }],
+                    isError: true
+                };
+            }
+            if (!card.isAvailableForTrade) {
+                return {
+                    content: [{ type: "text", text: `Error: Card "${card.name}" is already locked in escrow for another active loan.` }],
                     isError: true
                 };
             }
@@ -114,6 +121,8 @@ export function registerLendingTools(server, ccService, accountService) {
                     isError: true
                 };
             }
+            // Lock card in lending escrow so it cannot be sold or transferred
+            card.isAvailableForTrade = false;
             const days = parseInt(args.loanDurationDays, 10);
             const loanReceipt = accountService.executeLoan(card.id, card.name, args.borrowAmountUsdc, days);
             return {

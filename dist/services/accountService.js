@@ -154,11 +154,32 @@ export class AccountService {
         if (!this.validateSolanaAddress(trimmed)) {
             throw new Error(`Invalid Solana address "${address}". A valid Solana address must be a base58 string 32-44 characters long.`);
         }
-        this.activeAccount.walletAddress = trimmed;
-        this.activeAccount.connectedVia = "Solana Native";
-        this.activeAccount.isConnected = true;
-        this.activeAccount.lastActive = new Date().toISOString();
-        // Query live on-chain balances
+        // Check if user already has an existing saved account in persistent storage
+        const existing = this.storage.getAccount(trimmed);
+        if (existing) {
+            this.activeAccount = {
+                ...existing,
+                isConnected: true,
+                lastActive: new Date().toISOString()
+            };
+        }
+        else {
+            this.activeAccount = {
+                walletAddress: trimmed,
+                connectedVia: "Solana Native",
+                isConnected: true,
+                balances: { sol: 0, usdc: 0, cards: 0 },
+                spendLimits: {
+                    perTransactionCapUsd: 100,
+                    dailySpendCapUsd: 500,
+                    dailySpentSoFarUsd: 0,
+                    requiresPasskeyAboveUsd: 50
+                },
+                createdAt: new Date().toISOString(),
+                lastActive: new Date().toISOString()
+            };
+        }
+        // Query live on-chain balances from Solana RPC
         try {
             const live = await this.solanaService.getBalances(trimmed);
             this.activeAccount.balances.sol = live.sol;
@@ -166,7 +187,7 @@ export class AccountService {
             this.activeAccount.balances.cards = live.cards;
         }
         catch {
-            // Keep existing balance cache if network RPC is unavailable
+            // Keep existing balance if network RPC is unavailable
         }
         this.storage.saveAccount(this.activeAccount);
         return this.activeAccount;
@@ -217,10 +238,27 @@ export class AccountService {
         return this.activeAccount.spendLimits;
     }
     /**
-     * Check and enforce spend limits before moving funds
+     * Check and enforce spend limits and actual wallet balance before moving real funds
      */
     verifySpendSafety(amountUsd) {
+        // 1. Guard against NaN, zero, negative, or infinite values
+        if (!Number.isFinite(amountUsd) || amountUsd <= 0) {
+            return {
+                allowed: false,
+                requiresPasskeyPrompt: false,
+                errorReason: "Invalid transaction amount: Amount must be a positive finite number."
+            };
+        }
+        // 2. Real Money Protection: Ensure actual available USDC balance in connected wallet
+        if (this.activeAccount.balances.usdc < amountUsd) {
+            return {
+                allowed: false,
+                requiresPasskeyPrompt: false,
+                errorReason: `Insufficient funds: Required $${amountUsd} USDC, but your wallet only holds $${this.activeAccount.balances.usdc.toFixed(2)} USDC. Please deposit USDC into your wallet (${this.activeAccount.walletAddress}) to proceed.`
+            };
+        }
         const limits = this.activeAccount.spendLimits;
+        // 3. Per-transaction safety cap
         if (amountUsd > limits.perTransactionCapUsd) {
             return {
                 allowed: false,
@@ -228,6 +266,7 @@ export class AccountService {
                 errorReason: `Amount of $${amountUsd} USD exceeds your per-transaction spend limit ($${limits.perTransactionCapUsd} USD). You can adjust this with 'set_spend_limits'.`
             };
         }
+        // 4. Daily 24-hour spend cap
         if (limits.dailySpentSoFarUsd + amountUsd > limits.dailySpendCapUsd) {
             return {
                 allowed: false,

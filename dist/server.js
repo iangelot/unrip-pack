@@ -18,7 +18,7 @@ export function createCollectorCryptServer(accountServiceInstance) {
     const solanaService = new SolanaService();
     const accountService = accountServiceInstance || new AccountService(solanaService);
     const server = new McpServer({
-        name: "collector-crypt-paybox-plugin",
+        name: "unrip-agent",
         version: "1.0.0"
     });
     // Register all tool suites

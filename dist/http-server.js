@@ -46,8 +46,10 @@ export function startHttpServer(port = 3000) {
     app.get("/health", (_req, res) => {
         res.json({
             status: "healthy",
-            service: "collector-crypt-paybox-mcp",
+            service: "unrip-agent-protocol",
             version: "1.0.0",
+            productName: "Unrip Protocol",
+            description: "Autonomous Web3 physical graded collectibles and pack opening protocol",
             auth: "OAuth 2.1 (RFC 7591 Dynamic Client Registration + Web3 Agent Wallet)",
             staticClientId: "claude-connector",
             endpoints: {
@@ -342,7 +344,7 @@ export function startHttpServer(port = 3000) {
       <!DOCTYPE html>
       <html>
       <head>
-        <title>Collector Crypt PayBox Remote MCP Connector</title>
+        <title>Unrip Protocol - Autonomous Physical Collectibles Agent</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
           body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0a0c10; color: #f8fafc; padding: 2.5rem 1.5rem; max-width: 800px; margin: 0 auto; line-height: 1.6; }
@@ -357,8 +359,8 @@ export function startHttpServer(port = 3000) {
         </style>
       </head>
       <body>
-        <h1>Collector Crypt Agent Connector <span class="badge">ONLINE</span></h1>
-        <p>A live, non-custodial Model Context Protocol (MCP) agent wallet connecting <strong>Claude Custom Connectors</strong> with <strong>Collector Crypt</strong> physical graded collectibles on Solana.</p>
+        <h1>Unrip Agent Protocol <span class="badge">ONLINE</span></h1>
+        <p>An autonomous, non-custodial Model Context Protocol (MCP) agent connecting <strong>Claude AI</strong> with physical authenticated graded collectibles, provably fair pack openings, and liquid vault infrastructure on Solana.</p>
         
         <div class="features">
           <div class="feat-card">
@@ -366,16 +368,16 @@ export function startHttpServer(port = 3000) {
             Claude automatically knows your connected wallet. Zero 44-character address typing required.
           </div>
           <div class="feat-card">
-            <strong>📦 Instant Pack Opening</strong><br>
-            Direct execution with RNG card pulls, PSA grades, market value estimation, and PnL receipts.
+            <strong>📦 Provably Fair Pack Rips</strong><br>
+            CSPRNG HMAC-SHA256 outcome proofs, PSA grades, instant valuation, and PnL receipts.
           </div>
           <div class="feat-card">
-            <strong>💰 Instant Liquidity & Buyback</strong><br>
-            Sell cards back directly to Collector Crypt with instant USDC cash-out to your balance.
+            <strong>💰 Guaranteed Liquid Buyback</strong><br>
+            Instant USDC cash-out credited directly to your balance.
           </div>
           <div class="feat-card">
             <strong>🛡️ Spend Limits & Safeguards</strong><br>
-            Per-transaction caps, daily spend budgets, and biometric passkey thresholds for AI safety.
+            Hard platform ceilings ($500/tx, $2,000/day), anti-injection challenge codes, and passkey thresholds.
           </div>
         </div>
 
@@ -383,7 +385,7 @@ export function startHttpServer(port = 3000) {
         <p>In Claude, go to <strong>Customize</strong> &rarr; <strong>Connectors</strong> &rarr; <strong>Add custom connector</strong> and enter:</p>
         
         <div class="code-box">
-Name: Collector Crypt
+Name: Unrip
 MCP Server URL: ${baseUrl}/mcp
         </div>
 
@@ -466,9 +468,9 @@ MCP Server URL: ${baseUrl}/mcp
     });
     const serverInstance = app.listen(port, () => {
         console.log(`\n=======================================================`);
-        console.log(`🚀 Collector Crypt Remote MCP Connector Ready!`);
+        console.log(`🚀 Unrip Protocol - Autonomous Physical Collectibles Agent Ready!`);
         console.log(`📡 Base URL: http://localhost:${port}`);
-        console.log(`⚡ Streamable HTTP (Claude / VidIQ spec): http://localhost:${port}/mcp`);
+        console.log(`⚡ Streamable HTTP (Claude Connector spec): http://localhost:${port}/mcp`);
         console.log(`⚡ OAuth Discovery: http://localhost:${port}/.well-known/oauth-authorization-server`);
         console.log(`⚡ Wallet Link Portal: http://localhost:${port}/oauth/authorize`);
         console.log(`⚡ Legacy SSE: http://localhost:${port}/sse`);
