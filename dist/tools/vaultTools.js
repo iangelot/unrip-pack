@@ -86,5 +86,61 @@ export function registerVaultTools(server, ccService, accountService) {
             };
         }
     });
+    // Tool 4: transfer_vault_card
+    server.tool("transfer_vault_card", "Transfer ownership of a tokenized 1:1 vaulted card NFT to another Solana wallet address.", {
+        cardId: z.string().describe("The card ID (e.g. 'cc-pkmn-003') or NFT mint to transfer"),
+        recipientAddress: z.string().describe("The recipient's Solana public address (Base58, 32-44 characters)"),
+        userAddress: z.string().optional().describe("Optional sender address. Defaults to connected session wallet.")
+    }, async (args) => {
+        try {
+            const senderAddress = accountService.getActiveAddress(args.userAddress);
+            if (!accountService.validateSolanaAddress(args.recipientAddress)) {
+                return {
+                    content: [{ type: "text", text: `Error: Invalid recipient Solana address "${args.recipientAddress}".` }],
+                    isError: true
+                };
+            }
+            const removedCard = ccService.removeCardFromUserCollection(senderAddress, args.cardId);
+            ccService.addCardToUserCollection(args.recipientAddress, removedCard);
+            const txSig = `5xfer${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}...sol`;
+            accountService.recordTransaction({
+                signature: txSig,
+                type: "SWAP",
+                status: "finalized",
+                timestamp: new Date().toISOString(),
+                description: `Transferred "${removedCard.name}" (${removedCard.grade}) to ${args.recipientAddress}`,
+                amountUsd: 0,
+                solanaExplorerUrl: `https://solscan.io/tx/${txSig}`
+            });
+            return {
+                content: [
+                    {
+                        type: "text",
+                        text: JSON.stringify({
+                            status: "TRANSFER_SUCCESSFUL",
+                            message: `Successfully transferred "${removedCard.name}" to ${args.recipientAddress}.`,
+                            transferredCard: {
+                                name: removedCard.name,
+                                grade: removedCard.grade,
+                                certNumber: removedCard.certNumber,
+                                nftMint: removedCard.nftMint,
+                                estimatedValueUsdc: `$${removedCard.estimatedValueUsdc}`
+                            },
+                            recipient: args.recipientAddress,
+                            solanaTxSignature: txSig,
+                            solanaExplorerUrl: `https://solscan.io/tx/${txSig}`
+                        }, null, 2)
+                    }
+                ]
+            };
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            return {
+                content: [{ type: "text", text: `Error executing card transfer: ${msg}` }],
+                isError: true
+            };
+        }
+    });
 }
 //# sourceMappingURL=vaultTools.js.map

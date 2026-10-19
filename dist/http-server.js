@@ -420,11 +420,10 @@ MCP Server URL: ${baseUrl}/mcp
                     sessionAccountServices.delete(transport.sessionId);
                 }
             };
-            // Check if this session has a linked OAuth wallet
-            let sessionAccountService = sharedAccountService;
+            // Ensure strict session isolation: each session gets its own AccountService instance
+            let sessionAccountService = new AccountService(solanaService);
             if (bearerToken && oauthTokensToWallet.has(bearerToken)) {
                 const linkedWallet = oauthTokensToWallet.get(bearerToken);
-                sessionAccountService = new AccountService(solanaService);
                 await sessionAccountService.connectWallet(linkedWallet);
             }
             sessionAccountServices.set(newSessionId, sessionAccountService);
