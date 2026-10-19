@@ -55,30 +55,6 @@ export function startHttpServer(port = 3000) {
         });
     });
     // =========================================================================
-    // RFC 8414 & OpenID OAuth Discovery Metadata (Required by Claude / IdPs)
-    // =========================================================================
-    const getDiscoveryMetadata = (req) => {
-        const proto = req.headers["x-forwarded-proto"] || "https";
-        const host = req.headers.host || "paybox-collectorcrypt-mcp.onrender.com";
-        const baseUrl = `${proto}://${host}`;
-        return {
-            issuer: baseUrl,
-            authorization_endpoint: `${baseUrl}/oauth/authorize`,
-            token_endpoint: `${baseUrl}/oauth/token`,
-            response_types_supported: ["code"],
-            grant_types_supported: ["authorization_code", "refresh_token"],
-            code_challenge_methods_supported: ["S256"],
-            token_endpoint_auth_methods_supported: ["none", "client_secret_post", "client_secret_basic"],
-            scopes_supported: ["wallet:read", "wallet:write", "vault:trade"]
-        };
-    };
-    app.get("/.well-known/oauth-authorization-server", (req, res) => {
-        res.json(getDiscoveryMetadata(req));
-    });
-    app.get("/.well-known/openid-configuration", (req, res) => {
-        res.json(getDiscoveryMetadata(req));
-    });
-    // =========================================================================
     // Interactive Web3 Wallet Link Portal: /oauth/authorize
     // =========================================================================
     app.get("/oauth/authorize", (req, res) => {
