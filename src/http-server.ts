@@ -177,6 +177,8 @@ export function startHttpServer(port: number = 3000) {
     const nonce = crypto.randomBytes(16).toString("hex");
     const domain = req.headers.host || "paybox-collectorcrypt-mcp.onrender.com";
     const challenge = `Unrip Protocol Authentication\nDomain: ${domain}\nNonce: ${nonce}\nTimestamp: ${new Date().toISOString()}\n\nSign this cryptographic challenge to authorize Claude AI to act on behalf of your Solana wallet.`;
+    // Base64 keeps the exact UTF-8 challenge bytes intact across HTML parsing and form submission.
+    const challengeBase64 = Buffer.from(challenge, "utf8").toString("base64");
 
     res.send(`
       <!DOCTYPE html>
@@ -246,7 +248,7 @@ export function startHttpServer(port: number = 3000) {
             <input type="hidden" name="redirect_uri" value="${redirectUri}">
             <input type="hidden" name="state" value="${state}">
             <input type="hidden" name="code_challenge" value="${codeChallenge}">
-            <input type="hidden" id="challengeText" name="challenge" value="${challenge}">
+            <input type="hidden" id="challengeText" name="challenge" value="${challengeBase64}">
             <input type="hidden" id="authMode" name="auth_mode" value="signature">
             <input type="hidden" id="signatureHex" name="signature_hex" value="">
             <input type="hidden" id="selectedAddress" name="wallet_address" value="7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU">
@@ -327,8 +329,8 @@ export function startHttpServer(port: number = 3000) {
               const pubkey = (resp.publicKey || provider.publicKey).toString();
               
               showStatus('Please approve the signature challenge in your wallet...');
-              const challenge = document.getElementById('challengeText').value;
-              const encodedChallenge = new TextEncoder().encode(challenge);
+              const challengeBase64 = document.getElementById('challengeText').value;
+              const encodedChallenge = Uint8Array.from(atob(challengeBase64), char => char.charCodeAt(0));
 
               let signed;
               if (provider.signMessage) {
@@ -416,7 +418,12 @@ export function startHttpServer(port: number = 3000) {
       try {
         const pubkey = new PublicKey(finalAddress);
         const pubkeyBytes = pubkey.toBytes();
-        const messageBytes = new TextEncoder().encode(challenge);
+        const challengeBytes = Buffer.from(challenge as string, "base64");
+        if (challengeBytes.toString("base64") !== challenge) {
+          res.status(400).send("Invalid challenge encoding.");
+          return;
+        }
+        const messageBytes = new Uint8Array(challengeBytes);
         const signatureBytes = new Uint8Array(Buffer.from(signature_hex, "hex"));
 
         const isValid = nacl.sign.detached.verify(messageBytes, signatureBytes, pubkeyBytes);
