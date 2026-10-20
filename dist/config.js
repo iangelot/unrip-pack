@@ -14,6 +14,8 @@ export const CONFIG = {
     PAYBOX_MAX_AUTONOMOUS_USD: 100, // Safe threshold before requesting explicit passkey confirmation
     // External APIs
     COLLECTOR_CRYPT_GACHA_API_BASE_URL: process.env.COLLECTOR_CRYPT_GACHA_API_BASE_URL || "https://gacha.collectorcrypt.com",
+    // Keep partner credentials server-side; never expose them through MCP tools.
+    COLLECTOR_CRYPT_GACHA_API_KEY: process.env.COLLECTOR_CRYPT_GACHA_API_KEY || "",
     JUPITER_PRICE_API: "https://api.jup.ag/price/v2",
     JUPITER_QUOTE_API: "https://quote-api.jup.ag/v6"
 };
