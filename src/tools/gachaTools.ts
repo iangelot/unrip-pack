@@ -7,6 +7,35 @@ import { PayBoxBridge } from "../services/payboxBridge.js";
 import { CONFIG } from "../config.js";
 import { hasLiveSettlement, liveSettlementUnavailable } from "../services/liveSettlement.js";
 import { CollectorCryptApiService } from "../services/collectorCryptApi.js";
+import nacl from "tweetnacl";
+import bs58 from "bs58";
+import { PublicKey } from "@solana/web3.js";
+import { verifyWalletSignedTransaction } from "../services/solanaTransaction.js";
+
+type PendingTransaction = {
+  walletAddress: string;
+  memo: string;
+  unsignedTransaction: string;
+  action: "pack_purchase" | "gift" | "buyback";
+  amountUsdc?: number;
+  nftAddress?: string;
+  createdAt: number;
+};
+
+type PendingGiftClaim = { walletAddress: string; messageToSign: string; packType: string; nonce: string; createdAt: number };
+
+function textResult(value: unknown) {
+  return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
+}
+
+function verifiedSessionAddress(accountService: AccountService, explicitAddress?: string): string {
+  const connected = accountService.getActiveAddress();
+  if (explicitAddress && explicitAddress.trim() !== connected) {
+    throw new Error("The requested wallet must match the wallet verified for this MCP session.");
+  }
+  accountService.requireVerifiedOwner("sign Collector Crypt transactions");
+  return connected;
+}
 
 export function registerGachaTools(
   server: any,
@@ -15,6 +44,53 @@ export function registerGachaTools(
   accountService: AccountService,
   collectorCryptApi: CollectorCryptApiService = new CollectorCryptApiService()
 ) {
+  // Pending transaction state is scoped to this MCP server/session. It stores no private key.
+  const pendingTransactions = new Map<string, PendingTransaction>();
+  const pendingGiftClaims = new Map<string, PendingGiftClaim>();
+
+  server.tool(
+    "prepare_collector_crypt_gift_claim",
+    "Prepare a Collector Crypt purchased/gifted pack claim. Returns a one-time challenge for the verified recipient wallet to sign; this does not move funds or open the pack.",
+    { packType: z.string().min(1).max(80).describe("Pack type of the gift to claim"), userAddress: z.string().optional().describe("Must match the verified session wallet") },
+    async (args: any) => {
+      try {
+        const walletAddress = verifiedSessionAddress(accountService, args.userAddress);
+        const challenge = await collectorCryptApi.generateGiftClaim({ publicKey: walletAddress, packType: args.packType });
+        if (challenge.success !== true) throw new Error("Collector Crypt did not issue a valid gift claim challenge.");
+        pendingGiftClaims.set(challenge.nonce, { walletAddress, messageToSign: challenge.messageToSign, packType: args.packType, nonce: challenge.nonce, createdAt: Date.now() });
+        return textResult({ status: "AWAITING_WALLET_MESSAGE_SIGNATURE", sandbox: false, wallet: walletAddress, packType: args.packType,
+          nonce: challenge.nonce, expiry: challenge.expiry, messageToSign: challenge.messageToSign,
+          nextStep: "Ask the verified wallet to sign this exact message as a message (not a transaction), then pass its base58 signature and exact message to claim_collector_crypt_gift." });
+      } catch (error) {
+        return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    "claim_collector_crypt_gift",
+    "Verify the recipient wallet's signature over a fresh Collector Crypt gift challenge, then consume one purchased/gifted pack and return its open memo.",
+    { nonce: z.string().min(1).max(100), signedMessage: z.string().min(1).max(1000), signature: z.string().min(80).max(100), turbo: z.boolean().optional().default(false), userAddress: z.string().optional() },
+    async (args: any) => {
+      try {
+        const walletAddress = verifiedSessionAddress(accountService, args.userAddress);
+        const pending = pendingGiftClaims.get(args.nonce);
+        if (!pending || pending.createdAt < Date.now() - 5 * 60_000) throw new Error("No fresh gift claim challenge exists for this nonce in this MCP session. Prepare a new claim challenge.");
+        if (pending.walletAddress !== walletAddress || args.signedMessage !== pending.messageToSign) throw new Error("The challenge message or wallet does not match the prepared request.");
+        const signatureBytes = bs58.decode(args.signature);
+        if (signatureBytes.length !== 64 || !nacl.sign.detached.verify(Buffer.from(pending.messageToSign, "utf8"), signatureBytes, new PublicKey(walletAddress).toBytes())) {
+          throw new Error("The verified wallet's challenge signature is invalid.");
+        }
+        const claim = await collectorCryptApi.useGiftClaim({ signedMessage: pending.messageToSign, signature: args.signature, publicKey: walletAddress, nonce: pending.nonce, packType: pending.packType, turbo: args.turbo });
+        pendingGiftClaims.delete(args.nonce);
+        return textResult({ status: "GIFT_CLAIMED", sandbox: false, wallet: walletAddress, packType: pending.packType, memo: claim.memo, packsRemaining: claim.packsRemaining,
+          nextStep: "Use open_collector_crypt_pack with this memo to open the claimed pack." });
+      } catch (error) {
+        return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
+      }
+    }
+  );
+
   // The official Gacha API provides recent winners, but no public popularity ranking.
   server.tool(
     "get_trending_packs",
@@ -37,6 +113,221 @@ export function registerGachaTools(
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         return { content: [{ type: "text", text: `Unable to fetch live Collector Crypt winners: ${message}` }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    "prepare_collector_crypt_pack_purchase",
+    "Prepare a real Collector Crypt mainnet pack purchase. This reserves a memo and returns the exact unsigned transaction for the verified wallet to review and sign through PayBox. No funds move until that wallet signs and submits it. The Gacha API partner key is optional.",
+    {
+      packType: z.string().min(1).max(80).describe("Live Collector Crypt machine code, such as pokemon_50"),
+      expectedPriceUsdc: z.number().positive().describe("Current live machine price the user explicitly agreed to pay"),
+      turbo: z.boolean().optional().default(false).describe("If true, Collector Crypt automatically buys back Common wins"),
+      userAddress: z.string().optional().describe("Must match the cryptographically verified session wallet")
+    },
+    async (args: any) => {
+      try {
+        const walletAddress = verifiedSessionAddress(accountService, args.userAddress);
+        const machines = await collectorCryptApi.getMachines() as any;
+        const machineRows = Array.isArray(machines?.machines) ? machines.machines : [];
+        const machine = machineRows.find((item: any) => item?.code === args.packType);
+        const price = Number(machine?.price);
+        if (!machine || !Number.isFinite(price) || price <= 0) throw new Error(`Live Gacha machine ${args.packType} or its price is unavailable.`);
+        if (Math.abs(price - args.expectedPriceUsdc) > 0.000001) {
+          throw new Error(`Price changed: ${args.packType} currently costs ${price} USDC. Confirm that price and try again.`);
+        }
+        const balance = await solanaService.getBalances(walletAddress);
+        if (balance.usdc < price) throw new Error(`Insufficient live USDC balance: need ${price}, have ${balance.usdc}.`);
+        const generated = await collectorCryptApi.generatePack({ playerAddress: walletAddress, packType: args.packType, turbo: args.turbo });
+        pendingTransactions.set(generated.memo, {
+          walletAddress,
+          memo: generated.memo,
+          unsignedTransaction: generated.transaction,
+          action: "pack_purchase",
+          amountUsdc: price,
+          createdAt: Date.now()
+        });
+        return textResult({
+          status: "AWAITING_WALLET_SIGNATURE",
+          sandbox: false,
+          network: "Solana mainnet",
+          dataSource: "Collector Crypt Gacha API",
+          apiKeyRequired: false,
+          wallet: walletAddress,
+          packType: args.packType,
+          priceUsdc: price,
+          turbo: args.turbo,
+          memo: generated.memo,
+          unsignedTransactionBase64: generated.transaction,
+          nextStep: "Have PayBox request_wallet_sign review and sign this exact Solana transaction for the verified wallet, then pass the complete signed base64 transaction and memo to submit_collector_crypt_transaction. Do not alter the transaction."
+        });
+      } catch (error) {
+        return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    "prepare_collector_crypt_gift",
+    "Prepare a real Collector Crypt Gacha gift purchase on Solana mainnet. The verified sender pays; the recipient receives the pack. Returns an unsigned transaction for explicit wallet review/signing. The Gacha API partner key is optional.",
+    {
+      receiverAddress: z.string().min(32).max(44).describe("Recipient Solana wallet"),
+      packType: z.string().min(1).max(80).describe("Live Collector Crypt machine code"),
+      expectedTotalUsdc: z.number().positive().describe("Total current gift price the user agreed to pay"),
+      count: z.number().int().min(1).max(20).optional().default(1),
+      userAddress: z.string().optional().describe("Must match the verified sender wallet")
+    },
+    async (args: any) => {
+      try {
+        const sender = verifiedSessionAddress(accountService, args.userAddress);
+        if (!accountService.validateSolanaAddress(args.receiverAddress)) throw new Error("Invalid gift recipient Solana address.");
+        const machines = await collectorCryptApi.getMachines() as any;
+        const machine = (Array.isArray(machines?.machines) ? machines.machines : []).find((item: any) => item?.code === args.packType);
+        const unitPrice = Number(machine?.price);
+        const expected = unitPrice * args.count;
+        if (!Number.isFinite(expected) || Math.abs(expected - args.expectedTotalUsdc) > 0.000001) throw new Error("The live machine price or gift total does not match the amount the user confirmed.");
+        const balance = await solanaService.getBalances(sender);
+        if (balance.usdc < expected) throw new Error(`Insufficient live USDC balance: need ${expected}, have ${balance.usdc}.`);
+        const generated = await collectorCryptApi.generateGift({ sender, receiver: args.receiverAddress, packType: args.packType, count: args.count });
+        pendingTransactions.set(generated.memo, {
+          walletAddress: sender,
+          memo: generated.memo,
+          unsignedTransaction: generated.transaction,
+          action: "gift",
+          amountUsdc: expected,
+          createdAt: Date.now()
+        });
+        return textResult({ status: "AWAITING_WALLET_SIGNATURE", network: "Solana mainnet", dataSource: "Collector Crypt Gacha API", apiKeyRequired: false,
+          sender, recipient: args.receiverAddress, packType: args.packType, count: args.count, totalCostUsdc: expected,
+          memo: generated.memo, unsignedTransactionBase64: generated.transaction,
+          nextStep: "Have PayBox review and sign this exact transaction; then submit it with submit_collector_crypt_transaction." });
+      } catch (error) {
+        return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    "submit_collector_crypt_transaction",
+    "Submit a previously prepared Collector Crypt purchase, gift, or buyback transaction. Verifies that the signed transaction message is byte-for-byte the prepared transaction and contains a valid signature from the verified session wallet before submission.",
+    {
+      memo: z.string().min(1).max(160).describe("Memo returned by the matching prepare tool"),
+      signedTransactionBase64: z.string().min(1).max(100000).describe("Complete serialized signed Solana transaction returned by PayBox"),
+      userAddress: z.string().optional().describe("Must match the verified wallet that prepared the operation")
+    },
+    async (args: any) => {
+      try {
+        const walletAddress = verifiedSessionAddress(accountService, args.userAddress);
+        const pending = pendingTransactions.get(args.memo);
+        if (!pending || pending.createdAt < Date.now() - 2 * 60_000) throw new Error("No fresh prepared transaction exists for that memo in this MCP session. Solana blockhashes expire quickly; prepare a fresh transaction.");
+        if (pending.walletAddress !== walletAddress) throw new Error("This prepared transaction belongs to a different verified wallet.");
+        verifyWalletSignedTransaction(pending.unsignedTransaction, args.signedTransactionBase64, walletAddress);
+        const submission = await collectorCryptApi.submitTransaction(args.signedTransactionBase64);
+        if (submission.success !== true || typeof submission.signature !== "string") throw new Error("Collector Crypt did not confirm transaction submission; no success is reported.");
+        let chain: Awaited<ReturnType<SolanaService["getOnChainSignatureStatus"]>> | null = null;
+        try { chain = await solanaService.getOnChainSignatureStatus(submission.signature); } catch { /* Submission may be live while this RPC is temporarily unavailable. */ }
+        if (chain?.status === "failed") throw new Error(`Solana reports the submitted transaction failed: ${JSON.stringify(chain.error)}`);
+        const confirmed = chain?.status === "confirmed" || chain?.status === "finalized";
+        if (confirmed) pendingTransactions.delete(args.memo);
+        if (confirmed) accountService.recordTransaction({
+          signature: submission.signature,
+          type: pending.action === "buyback" ? "BUYBACK" : "PACK_BUY",
+          status: chain?.status === "finalized" ? "finalized" : "confirmed",
+          timestamp: new Date().toISOString(),
+          description: `${pending.action} submitted for ${pending.memo}${confirmed ? " and confirmed on Solana" : "; awaiting Solana RPC confirmation"}`,
+          amountUsd: pending.amountUsdc ?? 0,
+          solanaExplorerUrl: `https://solscan.io/tx/${submission.signature}`
+        });
+        return textResult({ status: confirmed ? "CONFIRMED" : "SUBMITTED_AWAITING_CONFIRMATION", sandbox: false, wallet: walletAddress,
+          memo: pending.memo, action: pending.action, amountUsdc: pending.amountUsdc, signature: submission.signature,
+          collectorCryptConfirmation: submission.confirmationStatus ?? null, solanaRpcStatus: chain?.status ?? "unavailable",
+          explorerUrl: `https://solscan.io/tx/${submission.signature}`, nextStep: confirmed && pending.action === "pack_purchase" ? "Open this purchased pack with open_collector_crypt_pack." : undefined });
+      } catch (error) {
+        return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    "open_collector_crypt_pack",
+    "Open a purchased Collector Crypt pack by its official memo. This calls Collector Crypt's mainnet opening service and can irreversibly assign and transfer the NFT or process a configured turbo buyback. Only call when the user explicitly asks to reveal/open that pack.",
+    { memo: z.string().min(1).max(160).describe("Memo from a confirmed Collector Crypt pack purchase or gift") },
+    async ({ memo }: { memo: string }) => {
+      try {
+        const walletAddress = verifiedSessionAddress(accountService);
+        const packStatus = await collectorCryptApi.getPackStatus(memo) as any;
+        if (packStatus?.pack?.wallet !== walletAddress) throw new Error("Collector Crypt does not show this memo as a pack owned by the verified session wallet.");
+        if (packStatus?.pack?.status !== "confirmed" || packStatus?.pack?.refunded === true) throw new Error("This pack is not confirmed and openable, or it has been refunded.");
+        const result = await collectorCryptApi.openPack(memo) as any;
+        if (result?.success !== true || (typeof result.nft_address !== "string" && typeof result.code !== "string")) {
+          throw new Error("Collector Crypt did not return a valid award or documented pending status; no award is reported.");
+        }
+        return textResult({ status: result.code === "WAITING_FOR_WEBHOOK" ? "WAITING_FOR_PAYMENT_WEBHOOK" : "PACK_OPENED",
+          sandbox: false, wallet: walletAddress, memo, dataSource: "Collector Crypt Gacha API", result,
+          nextStep: result.code === "WAITING_FOR_WEBHOOK" ? "Retry open_collector_crypt_pack with this memo after a short wait; the API documents that retries do not send a second card." : undefined });
+      } catch (error) {
+        return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    "prepare_collector_crypt_buyback",
+    "Check current buyback eligibility, then prepare the real Collector Crypt NFT-to-USDC buyback transaction. Returns the exact payout and unsigned transaction; the verified wallet must sign it before submission.",
+    {
+      nftAddress: z.string().min(32).max(44).describe("Card NFT mint to sell back"),
+      expectedPayoutUsdc: z.number().positive().describe("Current payout the user explicitly agreed to receive"),
+      userAddress: z.string().optional().describe("Must match the verified seller wallet")
+    },
+    async (args: any) => {
+      try {
+        const walletAddress = verifiedSessionAddress(accountService, args.userAddress);
+        if (!accountService.validateSolanaAddress(args.nftAddress)) throw new Error("Invalid NFT mint address.");
+        const available = await collectorCryptApi.getBuybackAvailability(args.nftAddress);
+        if (available.available !== true || !Number.isFinite(available.amount)) throw new Error("Collector Crypt reports no current buyback for this NFT.");
+        const payoutUsdc = Number((available.amount! / 1_000_000).toFixed(6));
+        if (Math.abs(payoutUsdc - args.expectedPayoutUsdc) > 0.000001) throw new Error(`Buyback payout changed: current quote is ${payoutUsdc} USDC. Confirm it and try again.`);
+        const generated = await collectorCryptApi.generateBuyback({ playerAddress: walletAddress, nftAddress: args.nftAddress });
+        const key = `buyback:${args.nftAddress}`;
+        pendingTransactions.set(key, { walletAddress, memo: generated.memo, unsignedTransaction: generated.serializedTransaction,
+          action: "buyback", amountUsdc: payoutUsdc, nftAddress: args.nftAddress, createdAt: Date.now() });
+        return textResult({ status: "AWAITING_WALLET_SIGNATURE", network: "Solana mainnet", sandbox: false,
+          wallet: walletAddress, nftAddress: args.nftAddress, payoutUsdc, memo: generated.memo,
+          unsignedTransactionBase64: generated.serializedTransaction,
+          nextStep: "Have PayBox review and sign this exact buyback transaction, then call submit_collector_crypt_buyback with the signed transaction and NFT address." });
+      } catch (error) {
+        return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    "submit_collector_crypt_buyback",
+    "Submit a prepared Collector Crypt buyback after verifying the exact transaction message and the verified wallet signature, then check Solana settlement.",
+    { nftAddress: z.string().min(32).max(44), signedTransactionBase64: z.string().min(1).max(100000), userAddress: z.string().optional() },
+    async (args: any) => {
+      try {
+        const walletAddress = verifiedSessionAddress(accountService, args.userAddress);
+        const pending = pendingTransactions.get(`buyback:${args.nftAddress}`);
+        if (!pending || pending.createdAt < Date.now() - 60_000) throw new Error("No fresh prepared buyback exists for this NFT in this MCP session. Request a new quote; buyback transactions expire quickly.");
+        if (pending.walletAddress !== walletAddress) throw new Error("This buyback was prepared for another wallet.");
+        verifyWalletSignedTransaction(pending.unsignedTransaction, args.signedTransactionBase64, walletAddress);
+        const submission = await collectorCryptApi.submitTransaction(args.signedTransactionBase64);
+        if (submission.success !== true || typeof submission.signature !== "string") throw new Error("Collector Crypt did not confirm buyback transaction submission.");
+        let chain: Awaited<ReturnType<SolanaService["getOnChainSignatureStatus"]>> | null = null;
+        try { chain = await solanaService.getOnChainSignatureStatus(submission.signature); } catch { /* Submission may be live while this RPC is temporarily unavailable. */ }
+        if (chain?.status === "failed") throw new Error(`Solana reports the buyback failed: ${JSON.stringify(chain.error)}`);
+        const confirmed = chain?.status === "confirmed" || chain?.status === "finalized";
+        if (confirmed) pendingTransactions.delete(`buyback:${args.nftAddress}`);
+        if (confirmed) accountService.recordTransaction({ signature: submission.signature, type: "BUYBACK", status: chain?.status === "finalized" ? "finalized" : "confirmed",
+          timestamp: new Date().toISOString(), description: `Collector Crypt buyback for ${args.nftAddress}; RPC status ${chain?.status ?? "unavailable"}`,
+          amountUsd: pending.amountUsdc ?? 0, solanaExplorerUrl: `https://solscan.io/tx/${submission.signature}` });
+        return textResult({ status: confirmed ? "CONFIRMED" : "SUBMITTED_AWAITING_CONFIRMATION",
+          sandbox: false, nftAddress: args.nftAddress, payoutUsdc: pending.amountUsdc, signature: submission.signature,
+          solanaRpcStatus: chain?.status ?? "unavailable", explorerUrl: `https://solscan.io/tx/${submission.signature}` });
+      } catch (error) {
+        return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
       }
     }
   );
@@ -89,10 +380,10 @@ export function registerGachaTools(
   );
 
 
-  // Tool 2: open_gacha_pack (Direct execution with provably fair CSPRNG pull & card reveal)
+  // Legacy local simulation is deliberately named and labeled as sandbox-only.
   server.tool(
-    "open_gacha_pack",
-    "Execute opening a Collector Crypt Gacha pack. Checks spend safety limits, debits balance, rolls the provably fair HMAC-SHA256 outcome, reveals which card was pulled (name, grade, market value), and adds it to your collection.",
+    "open_gacha_pack_sandbox",
+    "SANDBOX ONLY: returns a local simulated card pull. It does not contact Collector Crypt, move funds, open a real pack, or produce a real transaction. Use open_collector_crypt_pack for a real confirmed purchase.",
     {
       packId: z.string().describe("Pack ID to open (e.g. 'pack-modern-heat', 'pack-vintage-grails', 'pack-anime-manga')"),
       paymentCurrency: z.enum(["USDC", "CARDS"]).optional().default("USDC").describe("Payment currency: 'USDC' or 'CARDS'"),
@@ -100,7 +391,7 @@ export function registerGachaTools(
       userAddress: z.string().optional().describe("Optional explicit Solana address. Defaults to your connected session wallet.")
     },
     async (args: any) => {
-      if (!hasLiveSettlement()) return liveSettlementUnavailable("open_gacha_pack");
+      if (!hasLiveSettlement()) return liveSettlementUnavailable("open_gacha_pack_sandbox");
       try {
         const activeAddress = accountService.getActiveAddress(args.userAddress);
         
@@ -215,17 +506,17 @@ export function registerGachaTools(
     }
   );
 
-  // Tool 4: prepare_buy_gacha_pack (For custom PayBox passkey signing payloads)
+  // Legacy local treasury-payment builder is deliberately sandbox-only.
   server.tool(
-    "prepare_buy_gacha_pack",
-    "Prepare a PayBox execution payload to purchase and open a Collector Crypt Gacha pack. Constructs the payment instruction for PayBox's `request_payment` tool.",
+    "prepare_buy_gacha_pack_sandbox",
+    "SANDBOX ONLY: constructs a local example payment payload. It is not a Collector Crypt purchase and must not be signed or submitted. Use prepare_collector_crypt_pack_purchase for the real Gacha flow.",
     {
       packId: z.string().describe("The pack ID to purchase (e.g., 'pack-modern-heat', 'pack-vintage-grails')"),
       paymentCurrency: z.enum(["USDC", "CARDS"]).describe("Currency to spend: 'USDC' or '$CARDS'"),
       userAddress: z.string().optional().describe("Optional explicit Solana wallet address. Defaults to connected session wallet.")
     },
     async (args: any) => {
-      if (!hasLiveSettlement()) return liveSettlementUnavailable("prepare_buy_gacha_pack");
+      if (!hasLiveSettlement()) return liveSettlementUnavailable("prepare_buy_gacha_pack_sandbox");
       const activeAddress = accountService.getActiveAddress(args.userAddress);
       const pack = ccService.getPackById(args.packId);
       if (!pack) {
@@ -268,10 +559,10 @@ export function registerGachaTools(
     }
   );
 
-  // Tool 5: verify_fair_roll (Cryptographic audit tool for provably fair pack openings)
+  // This only verifies the legacy local simulation algorithm, not Collector Crypt's VRF.
   server.tool(
-    "verify_fair_roll",
-    "Cryptographically verify any previous pack opening roll. Calculates HMAC-SHA256 with the revealed serverSeed, clientSeed, and nonce to prove mathematically that the drop outcome was never tampered with.",
+    "verify_sandbox_fair_roll",
+    "Verify only the legacy local sandbox HMAC calculation. This does not verify Collector Crypt's VRF, a real pack result, or prove a Collector Crypt outcome was fair.",
     {
       serverSeed: z.string().describe("The secret server seed revealed in provablyFairVerification"),
       clientSeed: z.string().describe("The client seed entropy used during the roll"),
@@ -295,8 +586,8 @@ export function registerGachaTools(
             {
               type: "text",
               text: JSON.stringify({
-                status: "VERIFIED_AUTHENTIC",
-                isFair: true,
+                status: "SANDBOX_MATH_REPRODUCED",
+                isFair: null,
                 verificationMath: {
                   commitmentHashSha256: commitmentHash,
                   hmacDigestHex: hexDigest,
@@ -306,7 +597,7 @@ export function registerGachaTools(
                   calculatedCardIndex: selectedIndex,
                   poolSize: args.poolSize
                 },
-                auditConclusion: "✅ Provably fair cryptographic check passed. The card drop was determined purely by the revealed seeds and was un-manipulated."
+                auditConclusion: "This reproduces a local HMAC calculation only; it is not an audit of Collector Crypt randomness or a real award."
               }, null, 2)
             }
           ]
@@ -321,4 +612,3 @@ export function registerGachaTools(
     }
   );
 }
-
