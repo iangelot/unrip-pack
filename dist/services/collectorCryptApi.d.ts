@@ -3,7 +3,8 @@ type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
 export declare class CollectorCryptApiService {
     private readonly baseUrl;
     private readonly fetcher;
-    constructor(baseUrl?: string, fetcher?: FetchLike);
+    private readonly apiKey;
+    constructor(baseUrl?: string, fetcher?: FetchLike, apiKey?: string);
     getMachines(): Promise<unknown>;
     getRecentWinners(packType?: string, count?: number): Promise<unknown>;
     getWalletPackActivity(walletAddress: string): Promise<{
