@@ -1,8 +1,17 @@
 import { Connection } from "@solana/web3.js";
 export declare class SolanaService {
     private connection;
-    constructor();
+    constructor(connection?: Connection);
     getConnection(): Connection;
+    /** Check a transaction signature against Solana RPC, independent of local history. */
+    getOnChainSignatureStatus(signature: string): Promise<{
+        signature: string;
+        status: "not_found" | "processed" | "confirmed" | "finalized" | "failed";
+        confirmationStatus: string | null;
+        confirmations: number | null;
+        error: unknown;
+        source: "Solana RPC";
+    }>;
     /**
      * Check balances for a user's Solana address (SOL, USDC, CARDS)
      */

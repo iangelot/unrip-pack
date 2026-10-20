@@ -3,11 +3,42 @@ import { getAssociatedTokenAddressSync, createTransferInstruction } from "@solan
 import { CONFIG } from "../config.js";
 export class SolanaService {
     connection;
-    constructor() {
-        this.connection = new Connection(CONFIG.SOLANA_RPC_URL, "confirmed");
+    constructor(connection) {
+        this.connection = connection ?? new Connection(CONFIG.SOLANA_RPC_URL, "confirmed");
     }
     getConnection() {
         return this.connection;
+    }
+    /** Check a transaction signature against Solana RPC, independent of local history. */
+    async getOnChainSignatureStatus(signature) {
+        const statuses = await this.connection.getSignatureStatuses([signature], { searchTransactionHistory: true });
+        const result = statuses.value[0];
+        if (!result) {
+            return {
+                signature,
+                status: "not_found",
+                confirmationStatus: null,
+                confirmations: null,
+                error: null,
+                source: "Solana RPC"
+            };
+        }
+        const confirmationStatus = result.confirmationStatus ?? "processed";
+        const status = result.err
+            ? "failed"
+            : confirmationStatus === "finalized"
+                ? "finalized"
+                : confirmationStatus === "confirmed"
+                    ? "confirmed"
+                    : "processed";
+        return {
+            signature,
+            status,
+            confirmationStatus,
+            confirmations: result.confirmations,
+            error: result.err,
+            source: "Solana RPC"
+        };
     }
     /**
      * Check balances for a user's Solana address (SOL, USDC, CARDS)
@@ -16,29 +47,33 @@ export class SolanaService {
         try {
             const pubkey = new PublicKey(userAddress);
             // Get SOL Balance
-            const lamports = await this.connection.getBalance(pubkey).catch(() => 0);
+            const lamports = await this.connection.getBalance(pubkey);
             const sol = lamports / LAMPORTS_PER_SOL;
             // Get USDC Balance
             let usdc = 0;
             try {
                 const usdcMint = new PublicKey(CONFIG.USDC_MINT_ADDRESS);
                 const usdcAta = getAssociatedTokenAddressSync(usdcMint, pubkey);
-                const usdcAccount = await this.connection.getTokenAccountBalance(usdcAta);
-                usdc = usdcAccount.value.uiAmount ?? 0;
+                if (await this.connection.getAccountInfo(usdcAta)) {
+                    const usdcAccount = await this.connection.getTokenAccountBalance(usdcAta);
+                    usdc = usdcAccount.value.uiAmount ?? 0;
+                }
             }
             catch {
-                usdc = 0;
+                throw new Error("Failed to read the USDC token account from Solana RPC.");
             }
             // Get CARDS Balance
             let cards = 0;
             try {
                 const cardsMint = new PublicKey(CONFIG.CARDS_MINT_ADDRESS);
                 const cardsAta = getAssociatedTokenAddressSync(cardsMint, pubkey);
-                const cardsAccount = await this.connection.getTokenAccountBalance(cardsAta);
-                cards = cardsAccount.value.uiAmount ?? 0;
+                if (await this.connection.getAccountInfo(cardsAta)) {
+                    const cardsAccount = await this.connection.getTokenAccountBalance(cardsAta);
+                    cards = cardsAccount.value.uiAmount ?? 0;
+                }
             }
             catch {
-                cards = 0;
+                throw new Error("Failed to read the CARDS token account from Solana RPC.");
             }
             return {
                 address: userAddress,

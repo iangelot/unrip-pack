@@ -14,12 +14,53 @@ import { CONFIG } from "../config.js";
 export class SolanaService {
   private connection: Connection;
 
-  constructor() {
-    this.connection = new Connection(CONFIG.SOLANA_RPC_URL, "confirmed");
+  constructor(connection?: Connection) {
+    this.connection = connection ?? new Connection(CONFIG.SOLANA_RPC_URL, "confirmed");
   }
 
   public getConnection(): Connection {
     return this.connection;
+  }
+
+  /** Check a transaction signature against Solana RPC, independent of local history. */
+  public async getOnChainSignatureStatus(signature: string): Promise<{
+    signature: string;
+    status: "not_found" | "processed" | "confirmed" | "finalized" | "failed";
+    confirmationStatus: string | null;
+    confirmations: number | null;
+    error: unknown;
+    source: "Solana RPC";
+  }> {
+    const statuses = await this.connection.getSignatureStatuses([signature], { searchTransactionHistory: true });
+    const result = statuses.value[0];
+    if (!result) {
+      return {
+        signature,
+        status: "not_found",
+        confirmationStatus: null,
+        confirmations: null,
+        error: null,
+        source: "Solana RPC"
+      };
+    }
+
+    const confirmationStatus = result.confirmationStatus ?? "processed";
+    const status = result.err
+      ? "failed"
+      : confirmationStatus === "finalized"
+        ? "finalized"
+        : confirmationStatus === "confirmed"
+          ? "confirmed"
+          : "processed";
+
+    return {
+      signature,
+      status,
+      confirmationStatus,
+      confirmations: result.confirmations,
+      error: result.err,
+      source: "Solana RPC"
+    };
   }
 
   /**

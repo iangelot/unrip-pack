@@ -1,7 +1,8 @@
 import { z } from "zod";
+import { hasLiveSettlement, liveSettlementUnavailable } from "../services/liveSettlement.js";
 export function registerVaultTools(server, ccService, accountService) {
     // Tool 1: get_vault_inventory
-    server.tool("get_vault_inventory", "Browse and search physical collectibles authenticated and vaulted in Collector Crypt partner facilities (PSA/PWCC/ALT). Filter by franchise, grade, or price.", {
+    server.tool("get_vault_inventory", "Browse hard-coded sandbox collectible examples. Inventory, vault custody, and prices are not live or verified.", {
         query: z.string().optional().describe("Search term like 'Charizard', 'Luffy', 'Jordan', or 'Black Lotus'"),
         category: z.enum(["All", "Pokemon", "Sports", "OnePiece", "MagicTheGathering", "Other"]).optional().describe("Collectibles category"),
         gradingCompany: z.enum(["PSA", "BGS", "CGC", "SGC"]).optional().describe("Grading company filter"),
@@ -21,7 +22,7 @@ export function registerVaultTools(server, ccService, accountService) {
             content: [
                 {
                     type: "text",
-                    text: JSON.stringify(results, null, 2)
+                    text: JSON.stringify({ ...results, dataMode: "sandbox", inventoryVerified: false }, null, 2)
                 }
             ]
         };
@@ -46,13 +47,13 @@ export function registerVaultTools(server, ccService, accountService) {
             content: [
                 {
                     type: "text",
-                    text: JSON.stringify(card, null, 2)
+                    text: JSON.stringify({ dataMode: "sandbox", custodyVerified: false, card }, null, 2)
                 }
             ]
         };
     });
     // Tool 3: get_user_collection (Does NOT require userAddress; auto-resolves from session)
-    server.tool("get_user_collection", "List all tokenized 1:1 card NFTs currently held in your vault. Does NOT require userAddress. Supports pagination via limit and offset.", {
+    server.tool("get_user_collection", "Check the local sandbox collection record for a wallet. This server does not yet verify Collector Crypt card NFT ownership on-chain; results must not be treated as current holdings.", {
         userAddress: z.string().optional().describe("Optional explicit Solana wallet address. Defaults to connected session wallet."),
         limit: z.number().optional().default(10).describe("Number of cards to return (default 10)"),
         offset: z.number().optional().default(0).describe("Pagination offset (default 0)")
@@ -60,19 +61,18 @@ export function registerVaultTools(server, ccService, accountService) {
         try {
             const activeAddress = accountService.getActiveAddress(args.userAddress);
             const result = ccService.getUserVaultCards(activeAddress, args.limit, args.offset);
-            const totalPortfolioValueUsdc = result.cards.reduce((sum, c) => sum + c.estimatedValueUsdc, 0);
             return {
                 content: [
                     {
                         type: "text",
                         text: JSON.stringify({
                             ownerAddress: activeAddress,
-                            totalCardsHeldCount: result.total,
-                            paginatedCount: result.cards.length,
-                            hasMore: result.hasMore,
-                            nextOffset: result.nextOffset,
-                            estimatedPortfolioValueUsdc: totalPortfolioValueUsdc,
-                            cards: result.cards
+                            dataMode: "sandbox",
+                            verified: false,
+                            status: "unavailable",
+                            reason: "Local sandbox cards are not reliable evidence of current wallet ownership and are suppressed from this response.",
+                            localSandboxRecordCount: result.total,
+                            cards: []
                         }, null, 2)
                     }
                 ]
@@ -92,6 +92,8 @@ export function registerVaultTools(server, ccService, accountService) {
         recipientAddress: z.string().describe("The recipient's Solana public address (Base58, 32-44 characters)"),
         userAddress: z.string().optional().describe("Optional sender address. Defaults to connected session wallet.")
     }, async (args) => {
+        if (!hasLiveSettlement())
+            return liveSettlementUnavailable("transfer_vault_card");
         try {
             const senderAddress = accountService.getActiveAddress(args.userAddress);
             // Security Check: Verify cryptographic ownership

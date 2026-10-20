@@ -13,7 +13,8 @@
     "audit:ui": "tsx src/open-auditor.ts",
     "test:wallet-auth": "npm run build && node tests/wallet-auth.integration.mjs",
     "test:wallet-portfolio": "npm run build && node tests/wallet-portfolio.integration.mjs",
-    "test:collector-api": "npm run build && node tests/collector-crypt-api.integration.mjs"
+    "test:collector-api": "npm run build && node tests/collector-crypt-api.integration.mjs",
+    "test:wallet-data-integrity": "npm run build && node tests/wallet-data-integrity.integration.mjs"
   },
   "engines": {
     "node": ">=20.0.0"
@@ -52,4 +53,3 @@
     "@types/node": "^26.6.5"
   }
 }
-

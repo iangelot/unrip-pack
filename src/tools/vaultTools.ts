@@ -76,7 +76,7 @@ export function registerVaultTools(
   // Tool 3: get_user_collection (Does NOT require userAddress; auto-resolves from session)
   server.tool(
     "get_user_collection",
-    "List all tokenized 1:1 card NFTs currently held in your vault. Does NOT require userAddress. Supports pagination via limit and offset.",
+    "Check the local sandbox collection record for a wallet. This server does not yet verify Collector Crypt card NFT ownership on-chain; results must not be treated as current holdings.",
     {
       userAddress: z.string().optional().describe("Optional explicit Solana wallet address. Defaults to connected session wallet."),
       limit: z.number().optional().default(10).describe("Number of cards to return (default 10)"),
@@ -86,7 +86,6 @@ export function registerVaultTools(
       try {
         const activeAddress = accountService.getActiveAddress(args.userAddress);
         const result = ccService.getUserVaultCards(activeAddress, args.limit, args.offset);
-        const totalPortfolioValueUsdc = result.cards.reduce((sum, c) => sum + c.estimatedValueUsdc, 0);
 
         return {
           content: [
@@ -94,14 +93,12 @@ export function registerVaultTools(
               type: "text",
               text: JSON.stringify({
                 ownerAddress: activeAddress,
-                totalCardsHeldCount: result.total,
-                paginatedCount: result.cards.length,
-                hasMore: result.hasMore,
-                nextOffset: result.nextOffset,
-                estimatedPortfolioValueUsdc: totalPortfolioValueUsdc,
                 dataMode: "sandbox",
-                collectionSource: "local simulation; not verified against on-chain NFTs",
-                cards: result.cards
+                verified: false,
+                status: "unavailable",
+                reason: "Local sandbox cards are not reliable evidence of current wallet ownership and are suppressed from this response.",
+                localSandboxRecordCount: result.total,
+                cards: []
               }, null, 2)
             }
           ]
@@ -204,3 +201,4 @@ export function registerVaultTools(
     }
   );
 }
+
