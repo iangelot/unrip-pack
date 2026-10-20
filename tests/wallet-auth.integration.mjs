@@ -19,8 +19,8 @@ try {
   assert.equal(messageBytes.toString("base64"), challengeBase64, "challenge should round-trip exactly");
 
   const challenge = messageBytes.toString("utf8");
-  assert.match(challenge, /\\nDomain: /);
-  assert.match(challenge, /\\nNonce: /);
+  assert.match(challenge, /\nDomain: /);
+  assert.match(challenge, /\nNonce: /);
 
   const keypair = Keypair.generate();
   const signature = nacl.sign.detached(messageBytes, keypair.secretKey);
