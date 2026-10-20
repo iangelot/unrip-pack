@@ -1,124 +1,52 @@
-# Collector Crypt Plugin for PayBox
+# Collector Crypt MCP integration
 
-An AI Agent Model Context Protocol (MCP) plugin that connects **MoonPay's PayBox** non-custodial wallet with **Collector Crypt**, the Solana-based Real-World Asset (RWA) platform for vaulted, authenticated physical collectibles (graded Pokémon cards, sports slabs, One Piece, and MTG).
+This repository is an MCP server that is intended to let an AI assistant read Collector Crypt data and, once completed, prepare user-approved actions through PayBox. It is **not yet a complete PayBox marketplace plugin** and must not be treated as a production trading or settlement app.
 
----
+## Current status
 
-## 💰 Cost Breakdown: What Will This Cost You?
+| Capability | Current behavior |
+| --- | --- |
+| Phantom wallet identity link | Signs a one-time off-chain challenge; it does not send a Solana transaction. This is a direct browser-wallet flow, not PayBox wallet authorization. |
+| SOL / SPL balances | Read from Solana RPC for the selected public address. |
+| Gacha machines and recent winners | Read from Collector Crypt's public Gacha API. These are platform API records, not independently verified by this server. |
+| Pack counts and memo status | Read from Collector Crypt's public Gacha API for a wallet or memo. This does not enumerate all NFTs in a wallet. |
+| Local seeded card examples and local history | Sandbox examples only; they are not verified Collector Crypt records or wallet holdings. |
+| Pack purchases, openings, buybacks, swaps, loans, card transfers, and redemption | Disabled. No live settlement is implemented in this repository. |
 
-| Item | Cost | Details |
-| :--- | :--- | :--- |
-| **Development & Code** | **$0.00** | The plugin is built completely and runs on your machine. |
-| **Solana RPC Provider** | **$0.00** (Free tier) | Defaults to Solana's public RPC (`api.mainnet-beta.solana.com`). Free tiers on Helius, QuickNode, or Alchemy provide generous monthly allowances if needed. |
-| **PayBox MCP Connection** | **$0.00** | Connecting your AI assistant to PayBox (`api.paybox.sh/mcp`) is free. |
-| **Network Gas Fees (On-Chain)** | **~$0.0005 - $0.001** / tx | Solana gas fees are fractions of a cent per transaction. |
-| **Purchasing Packs / Swapping** | **Variable (Pay As You Go)** | Only if you actually choose to execute purchases (e.g., buying a $35 Gacha pack or swapping $10 USDC into $CARDS). |
-| **Hosting (Optional)** | **$0.00** | Runs locally over stdio. If deployed remotely, free tiers on Render, Railway, or Fly.io are sufficient. |
+The sandbox response fields and tool descriptions are intentional. Never treat sandbox values, estimated card prices, or locally recorded activity as assets, payouts, or transaction receipts.
 
----
+## Run locally
 
-## 🚀 Key Features
-
-* **Vault Inventory Search**: Query vaulted physical cards across PSA, BGS, and CGC with filters for grade (PSA 10, Gem Mint), franchise, and price range.
-* **Gacha Mystery Packs**: Browse active pack drops, view odds for vintage grails, and prepare purchase payloads.
-* **RWA Collateralized Lending**: Calculate 55% LTV borrow terms and lock card NFTs in escrow to borrow USDC into PayBox without selling the physical card.
-* **Statistical Pack EV & Analytics**: Mathematical expected value (EV) calculations for mystery packs against market floors.
-* **Historical Auction Comps**: Real-world auction comps (Heritage, PWCC, Goldin, eBay) and PSA population scarcity reports.
-* **Physical-to-Web3 Ingestion**: Generate intake shipping manifests to send raw or graded cards from home to PSA Delaware or PWCC Oregon for vault tokenization.
-* **$CARDS Token Integration**: Check live token price, market stats, community buyback reserves, and prepare token swaps via Jupiter on Solana.
-* **Instant Liquidity Buybacks**: Quote instant payouts for tokenized cards in USDC or $CARDS.
-* **Physical Vault Redemption**: Calculate courier delivery and vault release fees to burn the NFT digital twin and ship the physical card slab to your door.
-* **Security & Gap Auditor Web Tool**: Built-in interactive dashboard to simulate attack vectors, test guardrails, and audit MCP security.
-
----
-
-## 🛡️ Launch the Interactive Security & Gap Auditor UI
-
-To open the visual security inspection and penetration testing dashboard in your browser:
-
-```bash
-npm run audit:ui
-```
-Or open [`auditor/index.html`](file:///C:/Users/idris/.gemini/antigravity-ide/scratch/paybox-collectorcrypt-plugin/auditor/index.html) directly in any browser.
-
----
-
-## 🛠️ Installation & Setup
-
-### 1. Build the Project
 ```bash
 npm install
 npm run build
+npm run start:http
 ```
 
-### 2. Verify All 10 Feature Suites with the Test Runner
+Copy `.env.example` to `.env` if you want to select a Collector Crypt API environment or provide an RPC endpoint. The default Collector Crypt read API is production; use `https://dev-gacha.collectorcrypt.com` for development data.
+
+## Live read tools
+
+- `get_pack_drops` reads current machine configuration, prices, odds, and stock from `GET /api/machines`.
+- `get_trending_packs` reads recent winners. Collector Crypt's public endpoint does not provide a verified trending ranking, so the tool does not invent one.
+- `get_pack_wallet_activity` reads purchased and gifted pack counts for an address.
+- `get_collector_crypt_pack_status` reads a pack's payment, award, and buyback records by memo.
+
+These tools use Collector Crypt's documented public API. Pack history is not the same as wallet NFT ownership; verify NFT holdings against Solana data separately.
+
+## Required work before live purchases
+
+The live Gacha purchase flow creates a Collector Crypt transaction, requires the wallet owner to review and sign it, submits it, then opens the pack and checks the returned memo/status. Buyback likewise requires a fresh eligibility check, a correctly built signed transaction, and confirmed settlement. Implement and verify those steps against Collector Crypt's development environment before enabling any money-moving tool.
+
+PayBox must be used as the signer/payment authority for the intended PayBox integration. The current Phantom OAuth screen only proves control of a browser wallet and must not be represented as a PayBox connection. PayBox access and its approval rules are configured by the user in PayBox; this server does not receive private keys.
+
+## Tests
+
 ```bash
-npm run test:client
+npm run test:collector-api
+npm run test:wallet-auth
+npm run test:wallet-portfolio
 ```
 
----
-
-## 🌐 Claude Custom Connector & Remote Web Mode (Streamable HTTP)
-
-This plugin runs as an **Agent Wallet** for Claude Custom Connectors, ChatGPT, and PayBox, implementing the modern Anthropic **Streamable HTTP** specification (the same standard used by official connectors like VidIQ and Figma).
-
-### Live Render URL:
-```
-https://paybox-collectorcrypt-mcp.onrender.com/mcp
-```
-
-### Adding to Claude (Web & Desktop):
-1. In Claude, go to **Customize** &rarr; **Connectors** &rarr; Click **Add custom connector**.
-2. Set **Name:** `Collector Crypt`
-3. Set **MCP Server URL:** `https://paybox-collectorcrypt-mcp.onrender.com/mcp`
-4. Click **Connect**. That's it!
-
-### 🔑 Wallet Linking & Identity:
-* **Zero Address Hassle:** You never have to manually input your 44-character Solana address in chat.
-* **Auto-Resolution:** Asking *"What cards do I have?"* or *"What is my balance?"* automatically resolves your active connected wallet.
-* **Instant Wallet Generation:** Ask Claude *"Create a new PayBox wallet for me"* to provision a fresh non-custodial Solana keypair with testnet sandbox balances.
-* **Link Existing Solana Wallet:** Say *"Link my wallet <solana_address>"* in chat or visit the interactive Web3 portal at `https://paybox-collectorcrypt-mcp.onrender.com/oauth/authorize`.
-
----
-
-## 🧰 Complete MCP Tool Matrix (25 Tools)
-
-| Tool | Category | Execution Type | Description |
-| :--- | :--- | :--- | :--- |
-| `get_account` | Account | Auto-Resolve | Connected address, live balances (SOL/USDC/CARDS), spend safety limits. |
-| `create_agent_wallet` | Account | Direct | Provision fresh non-custodial Solana keypair with starting sandbox balances. |
-| `connect_wallet` | Account | Direct | Link an existing Solana wallet address to your session with Base58 validation. |
-| `get_portfolio_summary` | Account | Auto-Resolve | Consolidated single-call card count, estimated collection value, balances, and net worth. |
-| `set_spend_limits` | Security | Direct | Configure per-tx spend cap, daily spend limit, and passkey prompt threshold. |
-| `get_transactions` | History | Paginated | List recent transaction records, block explorer links, and status. |
-| `get_transaction_status` | History | Lookup | Check on-chain confirmation status for any transaction signature. |
-| `get_trending_packs` | Gacha | Query | Identify #1 most trending pack, popularity ranking, 24h packs opened, and recent pulls. |
-| `open_gacha_pack` | Gacha | Direct | Direct pack opening: rolls randomized pull, reveals card + PSA grade + market value, and adds card to your vault. |
-| `get_pack_drops` | Gacha | Query | Browse active mystery packs, pricing, remaining supply, and grail odds. |
-| `get_pack_history` | Gacha | Paginated | All-time opened packs, pulled cards, and net PnL / ROI tracking. |
-| `prepare_buy_gacha_pack` | Gacha | Prepare | Construct transaction payload for external PayBox `request_payment`. |
-| `get_market_overview` | Analytics | Query | 24h platform trading volume, top market moving cards (7d gainers), and live on-chain pull feed. |
-| `calculate_pack_ev` | Analytics | Math | Calculate statistical Expected Value (EV), house edge, and ROI for any pack. |
-| `get_card_market_comps` | Analytics | Historical | Historical auction comps (Heritage, PWCC, Goldin) and PSA population scarcity reports. |
-| `get_vault_inventory` | Vault | Search | Filter vaulted physical cards by franchise (Pokemon/Sports/OP/MTG), PSA grade, and price. |
-| `get_card_details` | Vault | Query | In-depth metadata, cert number, digital twin NFT mint, and vault facility. |
-| `get_user_collection` | Vault | Paginated | List tokenized card NFTs in your vault with pagination (`limit`, `offset`). |
-| `get_buyback_quote` | Liquidity | Query | Instant guaranteed buyback quote in USDC and $CARDS. |
-| `execute_card_buyback` | Liquidity | Direct | Sell card back to Collector Crypt, burn NFT, and credit USDC to your account. |
-| `get_physical_redemption_quote` | Physical | Query | Calculate courier delivery, vault handling, and insurance fees. |
-| `prepare_physical_redemption` | Physical | Prepare | Prepare NFT burn payload for PayBox `request_wallet_sign`. |
-| `execute_physical_redemption` | Physical | Direct | Burn NFT and schedule armored FedEx courier delivery of the physical graded slab. |
-| `get_lending_terms` | DeFi | Query | Calculate 55% LTV collateralized loan terms, APR, and liquidation threshold. |
-| `execute_card_loan` | DeFi | Direct | Lock card NFT in lending escrow and borrow USDC directly into your balance. |
-| `execute_token_swap` | Token | Direct | Swap USDC and $CARDS with slippage guardrails and immediate balance updates. |
-| `get_cards_token_info` | Token | Query | Live $CARDS token price, 24h change, market cap, and buyback fund. |
-
-
----
-
-## 🛡️ Security Architecture & Guardrails
-
-1. **Non-Custodial Architecture:** Keys are never stored in plaintext on disk; operations run under non-custodial MPC protocols.
-2. **Deterministic Spend Limits:** The AI agent cannot spend beyond user-configured per-transaction and 24h daily caps.
-3. **Passkey Escalation:** High-value actions trigger WebAuthn passkey confirmation before settlement.
+The Collector Crypt API integration test uses a mocked HTTP client. It verifies request paths, query encoding, and error handling without making purchases or touching a wallet.
 
