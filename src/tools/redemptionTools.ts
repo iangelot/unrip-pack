@@ -2,6 +2,7 @@ import { z } from "zod";
 import { CollectorCryptService } from "../services/collectorCrypt.js";
 import { AccountService } from "../services/accountService.js";
 import { PayBoxBridge } from "../services/payboxBridge.js";
+import { hasLiveSettlement, liveSettlementUnavailable } from "../services/liveSettlement.js";
 
 export function registerRedemptionTools(
   server: any,
@@ -11,7 +12,7 @@ export function registerRedemptionTools(
   // Tool 1: get_buyback_quote
   server.tool(
     "get_buyback_quote",
-    "Get an instant liquidity buyback quote from Collector Crypt for a tokenized card. Shows guaranteed instant payout in both USDC and $CARDS.",
+    "Get a sandbox estimate only. Live buyback liquidity and USDC settlement are not integrated.",
     {
       cardId: z.string().describe("The card ID (e.g. 'cc-pkmn-003') or NFT mint address")
     },
@@ -22,7 +23,7 @@ export function registerRedemptionTools(
           content: [
             {
               type: "text",
-              text: JSON.stringify(quote, null, 2)
+              text: JSON.stringify({ ...quote, sandbox: true, settlementAvailable: false }, null, 2)
             }
           ]
         };
@@ -39,12 +40,13 @@ export function registerRedemptionTools(
   // Tool 2: execute_card_buyback (Direct execution closing the liquidity loop)
   server.tool(
     "execute_card_buyback",
-    "Sell a card back to Collector Crypt for instant guaranteed USDC payout. Burns the digital NFT, removes the card from your collection, and credits USDC directly into your account balance.",
+    "Unavailable: live buyback settlement is not integrated. This project currently has no on-chain NFT burn or USDC payout implementation.",
     {
       cardId: z.string().describe("The card ID (e.g. 'cc-pkmn-003') or NFT mint address to sell"),
       userAddress: z.string().optional().describe("Optional explicit Solana address. Defaults to connected session wallet.")
     },
     async (args: any) => {
+      if (!hasLiveSettlement()) return liveSettlementUnavailable("execute_card_buyback");
       try {
         const activeAddress = accountService.getActiveAddress(args.userAddress);
         
@@ -106,19 +108,20 @@ export function registerRedemptionTools(
   // Tool 3: get_physical_redemption_quote
   server.tool(
     "get_physical_redemption_quote",
-    "Calculate insured courier shipping and vault release handling fees to burn the digital NFT and have the authenticated physical card slab shipped to your door.",
+    "Get a sandbox estimate only. NFT burn, vault release, payment, and shipping are not integrated.",
     {
       cardId: z.string().describe("The card ID (e.g. 'cc-pkmn-001') or NFT mint address"),
       destinationCountry: z.string().optional().default("US").describe("Two-letter country code or country name (e.g., 'US', 'GB', 'CA', 'JP')")
     },
     async (args: any) => {
+      if (!hasLiveSettlement()) return liveSettlementUnavailable("prepare_physical_redemption");
       try {
         const quote = ccService.getPhysicalRedemptionQuote(args.cardId, args.destinationCountry);
         return {
           content: [
             {
               type: "text",
-              text: JSON.stringify(quote, null, 2)
+              text: JSON.stringify({ ...quote, sandbox: true, settlementAvailable: false }, null, 2)
             }
           ]
         };
@@ -174,13 +177,14 @@ export function registerRedemptionTools(
   // Tool 5: execute_physical_redemption (Direct execution)
   server.tool(
     "execute_physical_redemption",
-    "Burn the 1:1 tokenized NFT and authorize immediate vault release & armored courier delivery of the physical graded card slab to your physical address. Debits courier fee from USDC balance and provides a FedEx secure tracking code.",
+    "Unavailable: NFT burn, vault release, payment, and shipping integrations are not implemented.",
     {
       cardId: z.string().describe("The card ID (e.g. 'cc-pkmn-003') or NFT mint to physically redeem"),
       destinationCountry: z.string().optional().default("US").describe("Country destination for delivery (e.g., 'US', 'GB', 'CA', 'JP')"),
       userAddress: z.string().optional().describe("Optional explicit Solana wallet address. Defaults to connected session wallet.")
     },
     async (args: any) => {
+      if (!hasLiveSettlement()) return liveSettlementUnavailable("execute_physical_redemption");
       try {
         const activeAddress = accountService.getActiveAddress(args.userAddress);
         
@@ -253,6 +257,7 @@ export function registerRedemptionTools(
       trackingNumber: z.string().describe("Courier tracking number (e.g. 'FEDEX-SECURE-...') or Redemption ID")
     },
     async (args: any) => {
+      if (!hasLiveSettlement()) return liveSettlementUnavailable("track_shipment");
       return {
         content: [
           {
@@ -278,5 +283,3 @@ export function registerRedemptionTools(
     }
   );
 }
-
-
