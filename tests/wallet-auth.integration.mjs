@@ -74,6 +74,11 @@ try {
   const missingPkce = await fetch(`${baseUrl}/oauth/authorize?client_id=claude-connector&redirect_uri=https%3A%2F%2Fclaude.ai%2Fapi%2Fmcp%2Fauth_callback`);
   assert.equal(missingPkce.status, 400, "OAuth redirects must include an S256 PKCE challenge");
 
+  const querySandboxBypass = await fetch(`${baseUrl}/mcp?sandbox=true`);
+  assert.equal(querySandboxBypass.status, 401, "the public sandbox query must not bypass authentication");
+  const headerSandboxBypass = await fetch(`${baseUrl}/mcp`, { headers: { "x-sandbox-bypass": "true" } });
+  assert.equal(headerSandboxBypass.status, 401, "the public sandbox header must not bypass authentication");
+
   const boundPage = await (await fetch(`${baseUrl}/oauth/authorize`)).text();
   const boundMatch = boundPage.match(/id="challengeText" name="challenge" value="([^"]+)"/);
   assert.ok(boundMatch, "a challenge should be issued for parameter-binding validation");
