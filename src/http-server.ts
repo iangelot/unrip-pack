@@ -57,6 +57,7 @@ export function startHttpServer(port: number = 3000) {
   interface OAuthTokenData {
     walletAddress: string;
     isVerifiedOwner: boolean;
+    expiresAt: number;
   }
   const authChallenges = new Map<string, AuthChallengeEntry>();
   const oauthCodes = new Map<string, OAuthCodeEntry>();
@@ -560,6 +561,11 @@ export function startHttpServer(port: number = 3000) {
     }
 
     const codeEntry = oauthCodes.get(code)!;
+    if (Date.now() - codeEntry.createdAt > 10 * 60 * 1000) {
+      oauthCodes.delete(code);
+      res.status(400).json({ error: "invalid_grant", error_description: "Authorization code expired." });
+      return;
+    }
     if (client_id !== codeEntry.clientId || (redirect_uri || "") !== codeEntry.redirectUri) {
       res.status(400).json({ error: "invalid_grant", error_description: "Client or redirect URI does not match the authorization request." });
       return;
@@ -581,7 +587,8 @@ export function startHttpServer(port: number = 3000) {
     const accessToken = `pb_tok_${crypto.randomBytes(24).toString("hex")}`;
     oauthTokensToWallet.set(accessToken, {
       walletAddress: codeEntry.walletAddress,
-      isVerifiedOwner: codeEntry.isVerifiedOwner
+      isVerifiedOwner: codeEntry.isVerifiedOwner,
+      expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000
     });
 
     // Pre-initialize account in shared account service
@@ -700,7 +707,9 @@ MCP Server URL: ${baseUrl}/mcp
       return;
     }
 
-    if (bearerToken && !oauthTokensToWallet.has(bearerToken) && !isSandboxBypass) {
+    const tokenData = bearerToken ? oauthTokensToWallet.get(bearerToken) : undefined;
+    if (bearerToken && (!tokenData || tokenData.expiresAt <= Date.now()) && !isSandboxBypass) {
+      if (tokenData) oauthTokensToWallet.delete(bearerToken);
       res.setHeader(
         "WWW-Authenticate",
         `Bearer error="invalid_token", resource_metadata="${baseUrl}/.well-known/oauth-protected-resource"`
@@ -733,8 +742,7 @@ MCP Server URL: ${baseUrl}/mcp
 
       // Ensure strict session isolation: each session gets its own AccountService instance
       let sessionAccountService = new AccountService(solanaService);
-      if (bearerToken && oauthTokensToWallet.has(bearerToken)) {
-        const tokenData = oauthTokensToWallet.get(bearerToken)!;
+      if (bearerToken && tokenData) {
         await sessionAccountService.connectWallet(tokenData.walletAddress, tokenData.isVerifiedOwner);
       }
 
