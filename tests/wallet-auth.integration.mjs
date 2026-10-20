@@ -143,6 +143,7 @@ try {
   const accountService = new AccountService({
     getBalances: async () => ({ sol: 0, usdc: 0, cards: 0 }),
   });
+  assert.equal(accountService.getAccount().isVerifiedOwner, false, "the sample account must not start as a verified signer");
   const reconnectAddress = Keypair.generate().publicKey.toBase58();
   await accountService.connectWallet(reconnectAddress, true);
   await accountService.connectWallet(reconnectAddress, false);
