@@ -34,6 +34,12 @@ const accounts = new AccountService({
   getBalances: solana.getBalances
 });
 await accounts.connectWallet(wallet, false);
+assert.equal(accounts.verifySpendLimits(50).allowed, true);
+assert.equal(accounts.verifySpendLimits(101).allowed, false);
+assert.equal(accounts.verifySpendLimits(Number.NaN).allowed, false);
+accounts.recordSpend(490);
+assert.equal(accounts.verifySpendLimits(11).allowed, false);
+assert.equal(accounts.verifySpendLimits(10).allowed, true);
 accounts.recordPackOpening({
   id: "sandbox-pack",
   packId: "sample",
