@@ -43,7 +43,7 @@ export class AccountService {
           dailySpentSoFarUsd: 35,
           requiresPasskeyAboveUsd: 50
         },
-        isVerifiedOwner: true,
+        isVerifiedOwner: false,
         createdAt: new Date(Date.now() - 86400000 * 7).toISOString(),
         lastActive: new Date().toISOString()
       };
@@ -184,7 +184,7 @@ export class AccountService {
     if (existing) {
       this.activeAccount = {
         ...existing,
-        isVerifiedOwner: isVerifiedOwner || existing.isVerifiedOwner || false,
+        isVerifiedOwner,
         isConnected: true,
         lastActive: new Date().toISOString()
       };
@@ -225,7 +225,7 @@ export class AccountService {
    * Blocks money-moving actions if connected in unverified / read-only spectator mode.
    */
   public requireVerifiedOwner(actionName: string): void {
-    if (this.activeAccount.isVerifiedOwner === false) {
+    if (this.activeAccount.isVerifiedOwner !== true) {
       throw new Error(
         `Security Block: Wallet ${this.activeAccount.walletAddress} is connected in Read-Only Spectator Mode. To ${actionName}, you must prove cryptographic ownership by signing in with Phantom/Solflare or PayBox Passkey at the authorization portal.`
       );
