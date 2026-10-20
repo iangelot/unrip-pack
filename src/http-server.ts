@@ -10,6 +10,14 @@ import { createCollectorCryptServer } from "./server.js";
 import { SolanaService } from "./services/solana.js";
 import { AccountService } from "./services/accountService.js";
 
+interface AuthChallengeEntry {
+  clientId: string;
+  redirectUri: string;
+  state: string;
+  codeChallenge: string;
+  createdAt: number;
+}
+
 interface OAuthCodeEntry {
   code: string;
   walletAddress: string;
@@ -50,6 +58,7 @@ export function startHttpServer(port: number = 3000) {
     walletAddress: string;
     isVerifiedOwner: boolean;
   }
+  const authChallenges = new Map<string, AuthChallengeEntry>();
   const oauthCodes = new Map<string, OAuthCodeEntry>();
   const oauthTokensToWallet = new Map<string, OAuthTokenData>();
 
@@ -109,9 +118,9 @@ export function startHttpServer(port: number = 3000) {
       token_endpoint: `${baseUrl}/oauth/token`,
       registration_endpoint: `${baseUrl}/oauth/register`,
       response_types_supported: ["code"],
-      grant_types_supported: ["authorization_code", "refresh_token"],
+      grant_types_supported: ["authorization_code"],
       code_challenge_methods_supported: ["S256"],
-      token_endpoint_auth_methods_supported: ["none", "client_secret_post", "client_secret_basic"],
+      token_endpoint_auth_methods_supported: ["none"],
       scopes_supported: ["wallet:read", "wallet:write", "vault:trade"]
     };
   };
@@ -170,15 +179,44 @@ export function startHttpServer(port: number = 3000) {
   // Interactive Web3 Wallet Link Portal: /oauth/authorize (Sign-In with Solana)
   // =========================================================================
   app.get("/oauth/authorize", (req: Request, res: Response) => {
-    const clientId = (req.query.client_id as string) || "claude-connector";
-    const redirectUri = (req.query.redirect_uri as string) || "";
-    const state = (req.query.state as string) || "";
-    const codeChallenge = (req.query.code_challenge as string) || "";
+    const clientId = typeof req.query.client_id === "string" ? req.query.client_id : "claude-connector";
+    const redirectUri = typeof req.query.redirect_uri === "string" ? req.query.redirect_uri : "";
+    const state = typeof req.query.state === "string" ? req.query.state : "";
+    const codeChallenge = typeof req.query.code_challenge === "string" ? req.query.code_challenge : "";
+    const client = registeredClients.get(clientId);
+    if (!client) {
+      res.status(400).send("Unknown OAuth client.");
+      return;
+    }
+    if (redirectUri && !client.redirectUris.includes(redirectUri)) {
+      res.status(400).send("Redirect URI is not registered for this client.");
+      return;
+    }
+    if (redirectUri && !/^[A-Za-z0-9_-]{43,128}$/.test(codeChallenge)) {
+      res.status(400).send("A valid S256 PKCE code challenge is required.");
+      return;
+    }
+    if (state.length > 512) {
+      res.status(400).send("OAuth state is too long.");
+      return;
+    }
     const nonce = crypto.randomBytes(16).toString("hex");
     const domain = req.headers.host || "paybox-collectorcrypt-mcp.onrender.com";
     const challenge = `Unrip Protocol Authentication\nDomain: ${domain}\nNonce: ${nonce}\nTimestamp: ${new Date().toISOString()}\n\nSign this cryptographic challenge to authorize Claude AI to act on behalf of your Solana wallet.`;
     // Base64 keeps the exact UTF-8 challenge bytes intact across HTML parsing and form submission.
     const challengeBase64 = Buffer.from(challenge, "utf8").toString("base64");
+    const now = Date.now();
+    for (const [issuedChallenge, entry] of authChallenges) {
+      if (now - entry.createdAt > 10 * 60 * 1000) authChallenges.delete(issuedChallenge);
+    }
+    authChallenges.set(challengeBase64, { clientId, redirectUri, state, codeChallenge, createdAt: now });
+    const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (char) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    })[char]!);
+    const safeClientId = escapeHtml(clientId);
+    const safeRedirectUri = escapeHtml(redirectUri);
+    const safeState = escapeHtml(state);
+    const safeCodeChallenge = escapeHtml(codeChallenge);
 
     res.send(`
       <!DOCTYPE html>
@@ -244,10 +282,10 @@ export function startHttpServer(port: number = 3000) {
           <p class="subtitle">Select how you want your autonomous Claude assistant to interact with physical graded slabs, provably fair pack rips, and liquid card vaults.</p>
 
           <form id="authForm" method="POST" action="/oauth/authorize">
-            <input type="hidden" name="client_id" value="${clientId}">
-            <input type="hidden" name="redirect_uri" value="${redirectUri}">
-            <input type="hidden" name="state" value="${state}">
-            <input type="hidden" name="code_challenge" value="${codeChallenge}">
+            <input type="hidden" name="client_id" value="${safeClientId}">
+            <input type="hidden" name="redirect_uri" value="${safeRedirectUri}">
+            <input type="hidden" name="state" value="${safeState}">
+            <input type="hidden" name="code_challenge" value="${safeCodeChallenge}">
             <input type="hidden" id="challengeText" name="challenge" value="${challengeBase64}">
             <input type="hidden" id="authMode" name="auth_mode" value="signature">
             <input type="hidden" id="signatureHex" name="signature_hex" value="">
@@ -396,6 +434,17 @@ export function startHttpServer(port: number = 3000) {
       signature_hex,
       challenge
     } = req.body;
+    const issued = typeof challenge === "string" ? authChallenges.get(challenge) : undefined;
+    if (!issued || Date.now() - issued.createdAt > 10 * 60 * 1000) {
+      if (typeof challenge === "string") authChallenges.delete(challenge);
+      res.status(400).send("Authentication challenge is missing, expired, or already used. Reload and try again.");
+      return;
+    }
+    authChallenges.delete(challenge);
+    if (client_id !== issued.clientId || (redirect_uri || "") !== issued.redirectUri || (state || "") !== issued.state || (code_challenge || "") !== issued.codeChallenge) {
+      res.status(400).send("OAuth request parameters changed after the challenge was issued.");
+      return;
+    }
 
     let finalAddress = (wallet_address as string || "").trim();
     let isVerifiedOwner = false;
@@ -424,6 +473,10 @@ export function startHttpServer(port: number = 3000) {
           return;
         }
         const messageBytes = new Uint8Array(challengeBytes);
+        if (typeof signature_hex !== "string" || !/^[0-9a-fA-F]{128}$/.test(signature_hex)) {
+          res.status(400).send("Invalid signature encoding.");
+          return;
+        }
         const signatureBytes = new Uint8Array(Buffer.from(signature_hex, "hex"));
 
         const isValid = nacl.sign.detached.verify(messageBytes, signatureBytes, pubkeyBytes);
@@ -448,7 +501,7 @@ export function startHttpServer(port: number = 3000) {
       isVerifiedOwner = false;
     }
 
-    createAndRedirectCode(finalAddress, isVerifiedOwner, client_id, redirect_uri, state, code_challenge, res);
+    createAndRedirectCode(finalAddress, isVerifiedOwner, issued.clientId, issued.redirectUri, issued.state, issued.codeChallenge, res);
   });
 
   function createAndRedirectCode(
@@ -493,7 +546,7 @@ export function startHttpServer(port: number = 3000) {
   // OAuth Token Exchange: /oauth/token
   // =========================================================================
   app.post("/oauth/token", (req: Request, res: Response) => {
-    const { grant_type, code, client_id, redirect_uri } = req.body;
+    const { grant_type, code, client_id, redirect_uri, code_verifier } = req.body;
 
     if (grant_type !== "authorization_code") {
       res.status(400).json({ error: "unsupported_grant_type", error_description: "Only 'authorization_code' grant type is supported." });
@@ -506,7 +559,22 @@ export function startHttpServer(port: number = 3000) {
     }
 
     const codeEntry = oauthCodes.get(code)!;
-    oauthCodes.delete(code); // One-time use
+    if (client_id !== codeEntry.clientId || (redirect_uri || "") !== codeEntry.redirectUri) {
+      res.status(400).json({ error: "invalid_grant", error_description: "Client or redirect URI does not match the authorization request." });
+      return;
+    }
+    if (codeEntry.codeChallenge) {
+      if (typeof code_verifier !== "string" || !/^[A-Za-z0-9._~-]{43,128}$/.test(code_verifier)) {
+        res.status(400).json({ error: "invalid_grant", error_description: "A valid PKCE code_verifier is required." });
+        return;
+      }
+      const verifierChallenge = crypto.createHash("sha256").update(code_verifier).digest("base64url");
+      if (verifierChallenge !== codeEntry.codeChallenge) {
+        res.status(400).json({ error: "invalid_grant", error_description: "PKCE verification failed." });
+        return;
+      }
+    }
+    oauthCodes.delete(code); // Consume only after validating the client, redirect URI, and PKCE proof.
 
     // Generate Bearer token
     const accessToken = `pb_tok_${crypto.randomBytes(24).toString("hex")}`;
@@ -613,8 +681,7 @@ MCP Server URL: ${baseUrl}/mcp
     const authHeader = req.headers["authorization"] as string | undefined;
     const bearerToken = authHeader?.replace(/^Bearer\s+/i, "");
 
-    // Allow sandbox test bypass only when explicitly flagged
-    const isSandboxBypass = req.query.sandbox === "true" || req.headers["x-sandbox-bypass"] === "true";
+    const isSandboxBypass = process.env.NODE_ENV !== "production" && process.env.ALLOW_SANDBOX_BYPASS === "true";
 
     // RFC 9728 & Model Context Protocol Security Spec:
     // If client does not provide Bearer credentials, respond with HTTP 401 and WWW-Authenticate
