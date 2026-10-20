@@ -6,46 +6,85 @@ import { AccountService } from "../services/accountService.js";
 import { PayBoxBridge } from "../services/payboxBridge.js";
 import { CONFIG } from "../config.js";
 import { hasLiveSettlement, liveSettlementUnavailable } from "../services/liveSettlement.js";
+import { CollectorCryptApiService } from "../services/collectorCryptApi.js";
 
 export function registerGachaTools(
   server: any,
   ccService: CollectorCryptService,
   solanaService: SolanaService,
-  accountService: AccountService
+  accountService: AccountService,
+  collectorCryptApi: CollectorCryptApiService = new CollectorCryptApiService()
 ) {
-  // Tool 1: get_trending_packs (Specifically answers "whats the most trending pack on the market")
+  // The official Gacha API provides recent winners, but no public popularity ranking.
   server.tool(
     "get_trending_packs",
-    "Show hard-coded sandbox pack popularity examples. The figures are not live market or platform activity.",
-    {},
-    async () => {
-      const trending = ccService.getTrendingPacks();
+    "Fetch recent Collector Crypt Gacha winners from its official API. This feed is not a trending or popularity ranking.",
+    {
+      packType: z.string().optional().describe("Optional official pack code, such as pokemon_50"),
+      count: z.number().int().min(1).max(200).optional().default(10).describe("Number of recent records to request (1–200)")
+    },
+    async (args: any) => {
+      try {
+        const recent = await collectorCryptApi.getRecentWinners(args.packType, args.count);
       return {
         content: [
           {
             type: "text",
-              text: JSON.stringify({ ...trending, dataMode: "sandbox", marketDataVerified: false }, null, 2)
+              text: JSON.stringify({ dataSource: "Collector Crypt Gacha API", dataMode: "live_api", rankingAvailable: false, recent }, null, 2)
           }
         ]
       };
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        return { content: [{ type: "text", text: `Unable to fetch live Collector Crypt winners: ${message}` }], isError: true };
+      }
     }
   );
 
   // Tool 2: get_pack_drops
   server.tool(
     "get_pack_drops",
-    "List all active Gacha packs and mystery card drops on Collector Crypt, including pricing in USDC and $CARDS, popularity ranking, trending badges, rarity odds, remaining supply, and top grail prizes.",
+    "List live Collector Crypt Gacha machines, their current prices, configured odds, availability, and stock from the official API.",
     {},
     async () => {
-      const packs = ccService.getPackDrops();
-      return {
-        content: [
-          {
-            type: "text",
-              text: JSON.stringify({ dataMode: "sandbox", marketDataVerified: false, activePacks: packs }, null, 2)
-          }
-        ]
-      };
+      try {
+        const machines = await collectorCryptApi.getMachines();
+        return { content: [{ type: "text", text: JSON.stringify({ dataSource: "Collector Crypt Gacha API", dataMode: "live_api", machines }, null, 2) }] };
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        return { content: [{ type: "text", text: `Unable to fetch live Collector Crypt machines: ${message}` }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    "get_pack_wallet_activity",
+    "Read purchased and gifted Collector Crypt pack counts for a Solana wallet from the official Gacha API. This does not include unrelated NFTs or prove current NFT ownership.",
+    { userAddress: z.string().optional().describe("Wallet address; defaults to the connected session wallet") },
+    async (args: any) => {
+      try {
+        const address = accountService.getActiveAddress(args.userAddress);
+        const activity = await collectorCryptApi.getWalletPackActivity(address);
+        return { content: [{ type: "text", text: JSON.stringify({ wallet: address, dataSource: "Collector Crypt Gacha API", dataMode: "live_api", ...activity }, null, 2) }] };
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        return { content: [{ type: "text", text: `Unable to fetch live pack activity: ${message}` }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    "get_collector_crypt_pack_status",
+    "Read Collector Crypt's official record for a pack memo, including payment, NFT award, buyback, and transaction signatures.",
+    { memo: z.string().min(1).max(160).describe("Memo returned by Collector Crypt when the pack was generated") },
+    async (args: any) => {
+      try {
+        const status = await collectorCryptApi.getPackStatus(args.memo);
+        return { content: [{ type: "text", text: JSON.stringify({ dataSource: "Collector Crypt Gacha API", dataMode: "live_api", status }, null, 2) }] };
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        return { content: [{ type: "text", text: `Unable to fetch live pack status: ${message}` }], isError: true };
+      }
     }
   );
 
@@ -282,3 +321,4 @@ export function registerGachaTools(
     }
   );
 }
+
