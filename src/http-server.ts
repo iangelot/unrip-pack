@@ -193,7 +193,7 @@ export function startHttpServer(port: number = 3000) {
       res.status(400).send("Redirect URI is not registered for this client.");
       return;
     }
-    if (redirectUri && !/^[A-Za-z0-9_-]{43,128}$/.test(codeChallenge)) {
+    if (redirectUri && !/^[A-Za-z0-9_-]{43}$/.test(codeChallenge)) {
       res.status(400).send("A valid S256 PKCE code challenge is required.");
       return;
     }
