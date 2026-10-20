@@ -10,7 +10,8 @@
     "dev": "tsx src/index.ts",
     "dev:http": "tsx src/index.ts --http",
     "test:client": "tsx src/test-client.ts",
-    "audit:ui": "tsx src/open-auditor.ts"
+    "audit:ui": "tsx src/open-auditor.ts",
+    "test:wallet-auth": "npm run build && node tests/wallet-auth.integration.mjs"
   },
   "engines": {
     "node": ">=20.0.0"
