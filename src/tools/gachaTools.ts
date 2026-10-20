@@ -139,6 +139,8 @@ export function registerGachaTools(
         }
         const balance = await solanaService.getBalances(walletAddress);
         if (balance.usdc < price) throw new Error(`Insufficient live USDC balance: need ${price}, have ${balance.usdc}.`);
+        const spendLimit = accountService.verifySpendLimits(price);
+        if (!spendLimit.allowed) throw new Error(`Spend safety block: ${spendLimit.errorReason}`);
         const generated = await collectorCryptApi.generatePack({ playerAddress: walletAddress, packType: args.packType, turbo: args.turbo });
         pendingTransactions.set(generated.memo, {
           walletAddress,
@@ -189,6 +191,8 @@ export function registerGachaTools(
         if (!Number.isFinite(expected) || Math.abs(expected - args.expectedTotalUsdc) > 0.000001) throw new Error("The live machine price or gift total does not match the amount the user confirmed.");
         const balance = await solanaService.getBalances(sender);
         if (balance.usdc < expected) throw new Error(`Insufficient live USDC balance: need ${expected}, have ${balance.usdc}.`);
+        const spendLimit = accountService.verifySpendLimits(expected);
+        if (!spendLimit.allowed) throw new Error(`Spend safety block: ${spendLimit.errorReason}`);
         const generated = await collectorCryptApi.generateGift({ sender, receiver: args.receiverAddress, packType: args.packType, count: args.count });
         pendingTransactions.set(generated.memo, {
           walletAddress: sender,
@@ -239,6 +243,7 @@ export function registerGachaTools(
           amountUsd: pending.amountUsdc ?? 0,
           solanaExplorerUrl: `https://solscan.io/tx/${submission.signature}`
         });
+        if (confirmed && pending.action !== "buyback" && pending.amountUsdc) accountService.recordSpend(pending.amountUsdc);
         return textResult({ status: confirmed ? "CONFIRMED" : "SUBMITTED_AWAITING_CONFIRMATION", sandbox: false, wallet: walletAddress,
           memo: pending.memo, action: pending.action, amountUsdc: pending.amountUsdc, signature: submission.signature,
           collectorCryptConfirmation: submission.confirmationStatus ?? null, solanaRpcStatus: chain?.status ?? "unavailable",
