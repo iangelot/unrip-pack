@@ -68,6 +68,7 @@ export function startHttpServer(port: number = 3000) {
   const sessionAccountServices = new Map<string, AccountService>();
   // Active legacy SSE transports
   const sseTransports: Record<string, SSEServerTransport> = {};
+  const sseTokenBySession: Record<string, string> = {};
 
   // Registered OAuth clients (pre-configured static client + dynamic clients)
   interface RegisteredClient {
@@ -767,16 +768,28 @@ MCP Server URL: ${baseUrl}/mcp
   // =========================================================================
   // Backward compatibility: /sse and /messages (Legacy SSE clients)
   // =========================================================================
-  app.get("/sse", async (_req: Request, res: Response) => {
+  app.get("/sse", async (req: Request, res: Response) => {
+    const bearerToken = req.headers.authorization?.replace(/^Bearer\\s+/i, "");
+    const tokenData = bearerToken ? oauthTokensToWallet.get(bearerToken) : undefined;
+    if (!bearerToken || !tokenData || tokenData.expiresAt <= Date.now()) {
+      if (tokenData && bearerToken) oauthTokensToWallet.delete(bearerToken);
+      res.setHeader("WWW-Authenticate", 'Bearer error="invalid_token"');
+      res.status(401).json({ error: "unauthorized", error_description: "A valid Unrip OAuth bearer token is required." });
+      return;
+    }
     console.log("[Legacy SSE] Client connecting to /sse...");
-    const server = createCollectorCryptServer(sharedAccountService);
+    const sessionAccountService = new AccountService(solanaService);
+    await sessionAccountService.connectWallet(tokenData.walletAddress, tokenData.isVerifiedOwner);
+    const server = createCollectorCryptServer(sessionAccountService);
     const transport = new SSEServerTransport("/messages", res);
 
     const sessionId = transport.sessionId;
     sseTransports[sessionId] = transport;
+    sseTokenBySession[sessionId] = bearerToken;
 
     transport.onclose = () => {
       delete sseTransports[sessionId];
+      delete sseTokenBySession[sessionId];
     };
 
     await server.connect(transport);
@@ -785,9 +798,16 @@ MCP Server URL: ${baseUrl}/mcp
   app.post("/messages", async (req: Request, res: Response) => {
     const sessionId = req.query.sessionId as string;
     const transport = sseTransports[sessionId];
+    const bearerToken = req.headers.authorization?.replace(/^Bearer\\s+/i, "");
+    const expectedToken = sseTokenBySession[sessionId];
+    const tokenData = bearerToken ? oauthTokensToWallet.get(bearerToken) : undefined;
 
     if (!transport) {
       res.status(404).send("Session not found or expired");
+      return;
+    }
+    if (!bearerToken || bearerToken !== expectedToken || !tokenData || tokenData.expiresAt <= Date.now()) {
+      res.status(401).json({ error: "unauthorized", error_description: "The SSE session requires its valid owning bearer token." });
       return;
     }
 
