@@ -27,7 +27,7 @@ npm run build
 npm run start:http
 ```
 
-Copy `.env.example` to `.env` if you want to select a Collector Crypt API environment or provide an RPC endpoint. The default Collector Crypt read API is production; use `https://dev-gacha.collectorcrypt.com` for development data.
+Copy `.env.example` to `.env` if you want to select a Collector Crypt API environment or provide an RPC endpoint. The default Collector Crypt read API is production; use `https://dev-gacha.collectorcrypt.com` for development data. If Collector Crypt issues a Gacha API partner key for your environment, set it as `COLLECTOR_CRYPT_GACHA_API_KEY` in the server environment (for example, Render). The server sends it as `x-api-key`; it is never returned by an MCP tool. Do not place this key in browser code or share it in chat. The docs do not publish a separate key fee, so confirm access terms with Collector Crypt; pack purchases and on-chain network fees are separate costs.
 
 ## Live read tools
 
@@ -53,3 +53,4 @@ npm run test:wallet-portfolio
 ```
 
 The Collector Crypt API integration test uses a mocked HTTP client. It verifies request paths, query encoding, and error handling without making purchases or touching a wallet.
+

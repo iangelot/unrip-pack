@@ -17,6 +17,7 @@ const api = new CollectorCryptApiService("https://api.test", async (input, init)
 assert.deepEqual(await api.getMachines(), { machines: [{ code: "pokemon_50", price: 50 }] });
 assert.equal(calls[0].url.href, "https://api.test/api/machines");
 assert.equal(calls[0].init.method, "GET");
+assert.deepEqual(calls[0].init.headers, { accept: "application/json" });
 
 assert.deepEqual(await api.getRecentWinners("pokemon_50", 5), { data: [{ winner: "wallet", pack_type: "pokemon_50" }] });
 assert.equal(calls[1].url.pathname, "/api/getAllWinners");
@@ -32,6 +33,14 @@ assert.equal(calls[3].url.searchParams.get("wallet"), "wallet / address");
 
 assert.deepEqual(await api.getPackStatus("memo/with spaces"), { memo: "memo/with spaces", buyback: [] });
 assert.equal(calls[4].url.searchParams.get("memo"), "memo/with spaces");
+
+let authenticatedHeaders;
+const authenticatedApi = new CollectorCryptApiService("https://api.test", async (_input, init) => {
+  authenticatedHeaders = init.headers;
+  return Response.json({ machines: [] });
+}, " test-partner-key ");
+await authenticatedApi.getMachines();
+assert.deepEqual(authenticatedHeaders, { accept: "application/json", "x-api-key": "test-partner-key" });
 
 const failedApi = new CollectorCryptApiService("https://api.test", async () => new Response("unauthorized", { status: 401 }));
 await assert.rejects(() => failedApi.getMachines(), /HTTP 401/);
