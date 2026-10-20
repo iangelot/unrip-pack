@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { startHttpServer } from "../dist/http-server.js";
 import { Keypair } from "@solana/web3.js";
 import nacl from "tweetnacl";
+import { AccountService } from "../dist/services/accountService.js";
 
 const server = startHttpServer(0);
 
@@ -84,6 +85,15 @@ try {
     body: wrongClientBody,
   });
   assert.equal(wrongClient.status, 400, "OAuth parameters must remain bound to the issued challenge");
+
+  const accountService = new AccountService({
+    getBalances: async () => ({ sol: 0, usdc: 0, cards: 0 }),
+  });
+  const reconnectAddress = Keypair.generate().publicKey.toBase58();
+  await accountService.connectWallet(reconnectAddress, true);
+  await accountService.connectWallet(reconnectAddress, false);
+  assert.equal(accountService.getAccount().isVerifiedOwner, false, "a read-only reconnect must clear prior owner verification");
+  assert.throws(() => accountService.requireVerifiedOwner("spend funds"), /Read-Only Spectator Mode/);
   console.log("Wallet auth integration check passed.");
 } finally {
   await new Promise((resolve) => server.close(resolve));
