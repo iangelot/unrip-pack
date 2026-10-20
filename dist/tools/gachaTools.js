@@ -2,30 +2,61 @@ import { z } from "zod";
 import crypto from "crypto";
 import { PayBoxBridge } from "../services/payboxBridge.js";
 import { CONFIG } from "../config.js";
-export function registerGachaTools(server, ccService, solanaService, accountService) {
-    // Tool 1: get_trending_packs (Specifically answers "whats the most trending pack on the market")
-    server.tool("get_trending_packs", "Identify the most trending, highest velocity, and popular Gacha packs on the market. Returns #1 trending pack, 24h pack opening volume, popularity ranking, trending score (0-100), and recent grail pulls.", {}, async () => {
-        const trending = ccService.getTrendingPacks();
-        return {
-            content: [
-                {
-                    type: "text",
-                    text: JSON.stringify(trending, null, 2)
-                }
-            ]
-        };
+import { hasLiveSettlement, liveSettlementUnavailable } from "../services/liveSettlement.js";
+import { CollectorCryptApiService } from "../services/collectorCryptApi.js";
+export function registerGachaTools(server, ccService, solanaService, accountService, collectorCryptApi = new CollectorCryptApiService()) {
+    // The official Gacha API provides recent winners, but no public popularity ranking.
+    server.tool("get_trending_packs", "Fetch recent Collector Crypt Gacha winners from its official API. This feed is not a trending or popularity ranking.", {
+        packType: z.string().optional().describe("Optional official pack code, such as pokemon_50"),
+        count: z.number().int().min(1).max(200).optional().default(10).describe("Number of recent records to request (1–200)")
+    }, async (args) => {
+        try {
+            const recent = await collectorCryptApi.getRecentWinners(args.packType, args.count);
+            return {
+                content: [
+                    {
+                        type: "text",
+                        text: JSON.stringify({ dataSource: "Collector Crypt Gacha API", dataMode: "live_api", rankingAvailable: false, recent }, null, 2)
+                    }
+                ]
+            };
+        }
+        catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            return { content: [{ type: "text", text: `Unable to fetch live Collector Crypt winners: ${message}` }], isError: true };
+        }
     });
     // Tool 2: get_pack_drops
-    server.tool("get_pack_drops", "List all active Gacha packs and mystery card drops on Collector Crypt, including pricing in USDC and $CARDS, popularity ranking, trending badges, rarity odds, remaining supply, and top grail prizes.", {}, async () => {
-        const packs = ccService.getPackDrops();
-        return {
-            content: [
-                {
-                    type: "text",
-                    text: JSON.stringify({ activePacks: packs }, null, 2)
-                }
-            ]
-        };
+    server.tool("get_pack_drops", "List live Collector Crypt Gacha machines, their current prices, configured odds, availability, and stock from the official API.", {}, async () => {
+        try {
+            const machines = await collectorCryptApi.getMachines();
+            return { content: [{ type: "text", text: JSON.stringify({ dataSource: "Collector Crypt Gacha API", dataMode: "live_api", machines }, null, 2) }] };
+        }
+        catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            return { content: [{ type: "text", text: `Unable to fetch live Collector Crypt machines: ${message}` }], isError: true };
+        }
+    });
+    server.tool("get_pack_wallet_activity", "Read purchased and gifted Collector Crypt pack counts for a Solana wallet from the official Gacha API. This does not include unrelated NFTs or prove current NFT ownership.", { userAddress: z.string().optional().describe("Wallet address; defaults to the connected session wallet") }, async (args) => {
+        try {
+            const address = accountService.getActiveAddress(args.userAddress);
+            const activity = await collectorCryptApi.getWalletPackActivity(address);
+            return { content: [{ type: "text", text: JSON.stringify({ wallet: address, dataSource: "Collector Crypt Gacha API", dataMode: "live_api", ...activity }, null, 2) }] };
+        }
+        catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            return { content: [{ type: "text", text: `Unable to fetch live pack activity: ${message}` }], isError: true };
+        }
+    });
+    server.tool("get_collector_crypt_pack_status", "Read Collector Crypt's official record for a pack memo, including payment, NFT award, buyback, and transaction signatures.", { memo: z.string().min(1).max(160).describe("Memo returned by Collector Crypt when the pack was generated") }, async (args) => {
+        try {
+            const status = await collectorCryptApi.getPackStatus(args.memo);
+            return { content: [{ type: "text", text: JSON.stringify({ dataSource: "Collector Crypt Gacha API", dataMode: "live_api", status }, null, 2) }] };
+        }
+        catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            return { content: [{ type: "text", text: `Unable to fetch live pack status: ${message}` }], isError: true };
+        }
     });
     // Tool 2: open_gacha_pack (Direct execution with provably fair CSPRNG pull & card reveal)
     server.tool("open_gacha_pack", "Execute opening a Collector Crypt Gacha pack. Checks spend safety limits, debits balance, rolls the provably fair HMAC-SHA256 outcome, reveals which card was pulled (name, grade, market value), and adds it to your collection.", {
@@ -34,6 +65,8 @@ export function registerGachaTools(server, ccService, solanaService, accountServ
         clientSeed: z.string().optional().describe("Optional client seed string for provably fair cryptographic HMAC-SHA256 roll verification"),
         userAddress: z.string().optional().describe("Optional explicit Solana address. Defaults to your connected session wallet.")
     }, async (args) => {
+        if (!hasLiveSettlement())
+            return liveSettlementUnavailable("open_gacha_pack");
         try {
             const activeAddress = accountService.getActiveAddress(args.userAddress);
             // Security Check: Verify cryptographic ownership (reject read-only spectator spoofing)
@@ -114,6 +147,7 @@ export function registerGachaTools(server, ccService, solanaService, accountServ
                 {
                     type: "text",
                     text: JSON.stringify({
+                        dataMode: "sandbox",
                         totalPacksOpened: history.totalOpened,
                         allTimeNetPnlUsdc: `${allTimePnl >= 0 ? "+" : ""}$${allTimePnl} USDC`,
                         packs: history.history.map(h => ({
@@ -136,6 +170,8 @@ export function registerGachaTools(server, ccService, solanaService, accountServ
         paymentCurrency: z.enum(["USDC", "CARDS"]).describe("Currency to spend: 'USDC' or '$CARDS'"),
         userAddress: z.string().optional().describe("Optional explicit Solana wallet address. Defaults to connected session wallet.")
     }, async (args) => {
+        if (!hasLiveSettlement())
+            return liveSettlementUnavailable("prepare_buy_gacha_pack");
         const activeAddress = accountService.getActiveAddress(args.userAddress);
         const pack = ccService.getPackById(args.packId);
         if (!pack) {
