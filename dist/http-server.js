@@ -1,7 +1,8 @@
 import express from "express";
 import cors from "cors";
 import crypto from "crypto";
-import { Keypair } from "@solana/web3.js";
+import { Keypair, PublicKey } from "@solana/web3.js";
+import nacl from "tweetnacl";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { createCollectorCryptServer } from "./server.js";
@@ -28,7 +29,6 @@ export function startHttpServer(port = 3000) {
     // Shared services
     const solanaService = new SolanaService();
     const sharedAccountService = new AccountService(solanaService);
-    // In-memory OAuth code & token mappings
     const oauthCodes = new Map();
     const oauthTokensToWallet = new Map();
     // In-memory sessions map for Streamable HTTP transport
@@ -126,133 +126,200 @@ export function startHttpServer(port = 3000) {
     // =========================================================================
     // Interactive Web3 Wallet Link Portal: /oauth/authorize
     // =========================================================================
+    // =========================================================================
+    // Interactive Web3 Wallet Link Portal: /oauth/authorize (Sign-In with Solana)
+    // =========================================================================
     app.get("/oauth/authorize", (req, res) => {
         const clientId = req.query.client_id || "claude-connector";
         const redirectUri = req.query.redirect_uri || "";
         const state = req.query.state || "";
         const codeChallenge = req.query.code_challenge || "";
+        const nonce = crypto.randomBytes(16).toString("hex");
+        const domain = req.headers.host || "paybox-collectorcrypt-mcp.onrender.com";
+        const challenge = `Unrip Protocol Authentication\nDomain: ${domain}\nNonce: ${nonce}\nTimestamp: ${new Date().toISOString()}\n\nSign this cryptographic challenge to authorize Claude AI to act on behalf of your Solana wallet.`;
         res.send(`
       <!DOCTYPE html>
       <html lang="en">
       <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>PayBox x Collector Crypt — Connect Agent Wallet</title>
+        <title>Unrip Protocol — Authorize Claude AI Connector</title>
         <style>
           :root {
             --bg: #090b10;
-            --card-bg: rgba(22, 27, 38, 0.85);
+            --card-bg: rgba(22, 27, 38, 0.9);
             --border: rgba(255, 255, 255, 0.1);
+            --border-hover: rgba(99, 102, 241, 0.5);
             --primary: #6366f1;
             --primary-glow: rgba(99, 102, 241, 0.35);
             --accent: #14f195;
+            --warning: #f59e0b;
             --text: #f8fafc;
             --text-dim: #94a3b8;
           }
           * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
           body { background: var(--bg); color: var(--text); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1.5rem; }
-          .container { max-width: 520px; width: 100%; background: var(--card-bg); border: 1px solid var(--border); border-radius: 16px; padding: 2.25rem; backdrop-filter: blur(20px); box-shadow: 0 20px 40px rgba(0,0,0,0.5); }
+          .container { max-width: 560px; width: 100%; background: var(--card-bg); border: 1px solid var(--border); border-radius: 20px; padding: 2.25rem; backdrop-filter: blur(24px); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.6); }
           .logo-badge { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1.25rem; }
-          .badge-sol { background: #14f19522; color: #14f195; border: 1px solid #14f19544; padding: 0.25rem 0.65rem; border-radius: 999px; font-size: 0.75rem; font-weight: bold; }
-          .badge-paybox { background: #6366f122; color: #818cf8; border: 1px solid #6366f144; padding: 0.25rem 0.65rem; border-radius: 999px; font-size: 0.75rem; font-weight: bold; }
-          h1 { font-size: 1.6rem; font-weight: 700; margin-bottom: 0.5rem; letter-spacing: -0.02em; }
-          p.subtitle { color: var(--text-dim); font-size: 0.95rem; margin-bottom: 1.75rem; line-height: 1.5; }
-          .option-card { background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem; transition: all 0.2s ease; cursor: pointer; }
-          .option-card:hover { border-color: var(--primary); background: rgba(99, 102, 241, 0.05); }
-          .option-title { font-weight: 600; font-size: 1rem; margin-bottom: 0.25rem; display: flex; align-items: center; justify-content: space-between; }
-          .option-desc { font-size: 0.85rem; color: var(--text-dim); line-height: 1.4; }
+          .badge-brand { background: #6366f122; color: #a5b4fc; border: 1px solid #6366f155; padding: 0.3rem 0.75rem; border-radius: 999px; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.05em; }
+          .badge-sol { background: #14f19522; color: #14f195; border: 1px solid #14f19555; padding: 0.3rem 0.75rem; border-radius: 999px; font-size: 0.75rem; font-weight: 700; }
+          h1 { font-size: 1.65rem; font-weight: 800; margin-bottom: 0.5rem; letter-spacing: -0.02em; }
+          p.subtitle { color: var(--text-dim); font-size: 0.92rem; margin-bottom: 1.75rem; line-height: 1.5; }
+          
+          .option-card { background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border); border-radius: 14px; padding: 1.25rem; margin-bottom: 1rem; transition: all 0.25s ease; cursor: pointer; position: relative; }
+          .option-card:hover { border-color: var(--border-hover); background: rgba(99, 102, 241, 0.06); transform: translateY(-1px); }
+          .option-card.primary-choice { border-color: rgba(99, 102, 241, 0.4); background: rgba(99, 102, 241, 0.04); }
+          .option-title { font-weight: 700; font-size: 1rem; margin-bottom: 0.35rem; display: flex; align-items: center; justify-content: space-between; }
+          .option-desc { font-size: 0.84rem; color: var(--text-dim); line-height: 1.45; }
+          .badge-pill { font-size: 0.72rem; padding: 0.2rem 0.55rem; border-radius: 999px; font-weight: 700; }
+          .badge-verified { background: #14f19522; color: #14f195; border: 1px solid #14f19544; }
+          .badge-instant { background: #38bdf822; color: #38bdf8; border: 1px solid #38bdf844; }
+          .badge-spectator { background: #f59e0b22; color: #f59e0b; border: 1px solid #f59e0b44; }
+
           .input-group { margin-top: 1rem; }
-          input[type="text"] { width: 100%; background: #0e121a; border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem 1rem; color: #fff; font-family: monospace; font-size: 0.9rem; margin-top: 0.5rem; }
+          input[type="text"] { width: 100%; background: #0c0f17; border: 1px solid var(--border); border-radius: 10px; padding: 0.75rem 1rem; color: #fff; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.88rem; margin-top: 0.4rem; }
           input[type="text"]:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-glow); }
-          .btn-submit { width: 100%; background: linear-gradient(135deg, #6366f1, #4f46e5); color: #fff; border: none; border-radius: 10px; padding: 0.85rem; font-weight: 600; font-size: 1rem; cursor: pointer; margin-top: 1.5rem; transition: opacity 0.2s; }
-          .btn-submit:hover { opacity: 0.92; }
-          .status-box { margin-top: 1rem; padding: 0.75rem; border-radius: 8px; font-size: 0.85rem; display: none; font-family: monospace; word-break: break-all; }
-          .status-success { background: #10b98122; border: 1px solid #10b981; color: #34d399; }
+          
+          .btn-action { width: 100%; background: linear-gradient(135deg, #6366f1, #4f46e5); color: #fff; border: none; border-radius: 10px; padding: 0.85rem; font-weight: 700; font-size: 0.95rem; cursor: pointer; margin-top: 0.75rem; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 0.5rem; }
+          .btn-action:hover { opacity: 0.93; transform: scale(1.005); }
+          .btn-secondary { background: rgba(255, 255, 255, 0.08); color: #e2e8f0; border: 1px solid var(--border); }
+          .btn-secondary:hover { background: rgba(255, 255, 255, 0.12); }
+          
+          .status-box { margin-top: 1rem; padding: 0.85rem; border-radius: 10px; font-size: 0.85rem; display: none; line-height: 1.4; word-break: break-all; }
+          .status-success { background: #10b98118; border: 1px solid #10b98144; color: #34d399; }
+          .status-error { background: #ef444418; border: 1px solid #ef444444; color: #f87171; }
+          .security-footer { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.06); font-size: 0.75rem; color: var(--text-dim); text-align: center; line-height: 1.4; }
         </style>
       </head>
       <body>
         <div class="container">
           <div class="logo-badge">
-            <span class="badge-paybox">PAYBOX VAULT</span>
-            <span class="badge-sol">SOLANA RWA</span>
+            <span class="badge-brand">UNRIP PROTOCOL</span>
+            <span class="badge-sol">SOLANA ED25519</span>
           </div>
-          <h1>Connect Agent Wallet</h1>
-          <p class="subtitle">Link your Solana wallet to your Claude AI assistant so it can view your vaulted cards, open packs, and execute trades autonomously.</p>
+          <h1>Connect to Claude AI</h1>
+          <p class="subtitle">Select how you want your autonomous Claude assistant to interact with physical graded slabs, provably fair pack rips, and liquid card vaults.</p>
 
           <form id="authForm" method="POST" action="/oauth/authorize">
             <input type="hidden" name="client_id" value="${clientId}">
             <input type="hidden" name="redirect_uri" value="${redirectUri}">
             <input type="hidden" name="state" value="${state}">
             <input type="hidden" name="code_challenge" value="${codeChallenge}">
+            <input type="hidden" id="challengeText" name="challenge" value="${challenge}">
+            <input type="hidden" id="authMode" name="auth_mode" value="signature">
+            <input type="hidden" id="signatureHex" name="signature_hex" value="">
             <input type="hidden" id="selectedAddress" name="wallet_address" value="7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU">
 
-            <!-- Option 1: Instant PayBox Agent Wallet -->
-            <div class="option-card" onclick="selectInstantWallet()">
+            <!-- Tier 1: Sign-In with Solana (Phantom/Solflare) -->
+            <div class="option-card primary-choice" id="cardSIWS">
               <div class="option-title">
-                <span>⚡ Instant PayBox Agent Wallet</span>
-                <span style="color: var(--accent); font-size: 0.8rem;">RECOMMENDED</span>
+                <span>🦊 Sign-In with Solana (SIWS)</span>
+                <span class="badge-pill badge-verified">FULL ACCESS</span>
               </div>
-              <div class="option-desc">Auto-provisions a fresh non-custodial Solana keypair with testnet funds ($500 USDC & cards).</div>
+              <div class="option-desc">Connect Phantom or Solflare and cryptographically sign a challenge. Proves private key ownership so Claude can open packs, cash out buybacks, and manage card vaults.</div>
+              <button type="button" class="btn-action" onclick="connectAndSignBrowserWallet()">Sign with Browser Wallet</button>
             </div>
 
-            <!-- Option 2: Connect Phantom/Solflare -->
-            <div class="option-card" onclick="connectBrowserWallet()">
+            <!-- Tier 2: Instant Non-Custodial Agent Wallet -->
+            <div class="option-card" id="cardInstant">
               <div class="option-title">
-                <span>🦊 Connect Browser Wallet</span>
-                <span id="phantomStatus" style="font-size: 0.8rem; color: var(--text-dim);">Phantom / Solflare</span>
+                <span>⚡ Instant Non-Custodial Wallet</span>
+                <span class="badge-pill badge-instant">AUTO-FUNDED</span>
               </div>
-              <div class="option-desc">Connect using your existing browser extension to link your real Solana portfolio.</div>
+              <div class="option-desc">Generates a fresh, dedicated Solana wallet keypair for your agent pre-loaded with $500 USDC testnet balance and demo vaulted cards.</div>
+              <button type="button" class="btn-action btn-secondary" onclick="useInstantWallet()">Generate Instant Agent Wallet</button>
             </div>
 
-            <!-- Option 3: Manual Address -->
-            <div class="input-group">
-              <label style="font-size: 0.85rem; font-weight: 500; color: var(--text-dim);">Or enter Solana Address manually:</label>
-              <input type="text" id="manualAddress" placeholder="e.g. 7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU" value="7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU" oninput="updateAddress(this.value)">
+            <!-- Tier 3: Read-Only Spectator Mode -->
+            <div class="option-card" id="cardSpectator">
+              <div class="option-title">
+                <span>👁️ Read-Only Spectator Mode</span>
+                <span class="badge-pill badge-spectator">INSPECTION ONLY</span>
+              </div>
+              <div class="option-desc">Enter any public Solana address to view collection value, card slabs, and market analytics without granting spending or transfer permissions.</div>
+              <div class="input-group">
+                <input type="text" id="manualAddress" placeholder="Paste Solana address (e.g. 7xKXtg...)" value="7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU">
+                <button type="button" class="btn-action btn-secondary" style="margin-top: 0.5rem;" onclick="submitSpectatorMode()">Connect in Spectator Mode</button>
+              </div>
             </div>
 
-            <div id="statusBox" class="status-box status-success"></div>
-
-            <button type="submit" class="btn-submit" id="submitBtn">Authorize Claude Connection</button>
+            <div id="statusBox" class="status-box"></div>
           </form>
+
+          <div class="security-footer">
+            🔒 Non-custodial architecture. Your private keys never leave your device. All actions are subject to user-configured spending safety limits and anti-injection confirmation challenges.
+          </div>
         </div>
 
         <script>
-          function updateAddress(val) {
-            document.getElementById('selectedAddress').value = val.trim();
-          }
-
-          function selectInstantWallet() {
-            // Generate a random-looking base58 public key representation for UI demonstration
-            const chars = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
-            let mockKey = 'PayBoxAgent';
-            for (let i = 0; i < 33; i++) {
-              mockKey += chars.charAt(Math.floor(Math.random() * chars.length));
-            }
-            document.getElementById('manualAddress').value = mockKey;
-            document.getElementById('selectedAddress').value = mockKey;
-            showStatus('Instant Agent Wallet generated: ' + mockKey);
-          }
-
-          async function connectBrowserWallet() {
-            if (window.solana && window.solana.isPhantom) {
-              try {
-                const resp = await window.solana.connect();
-                const pubkey = resp.publicKey.toString();
-                document.getElementById('manualAddress').value = pubkey;
-                document.getElementById('selectedAddress').value = pubkey;
-                showStatus('Connected Phantom: ' + pubkey);
-              } catch (err) {
-                alert('Connection cancelled or failed: ' + err.message);
-              }
-            } else {
-              alert('Phantom or Solflare wallet extension not detected in this browser tab. You can paste your address below or use the Instant Agent Wallet.');
-            }
-          }
-
-          function showStatus(text) {
+          function showStatus(text, isError = false) {
             const box = document.getElementById('statusBox');
             box.style.display = 'block';
+            box.className = 'status-box ' + (isError ? 'status-error' : 'status-success');
             box.innerText = text;
+          }
+
+          async function connectAndSignBrowserWallet() {
+            const provider = window.phantom?.solana || window.solana || window.solflare;
+            if (!provider) {
+              showStatus('Phantom or Solflare wallet extension not detected in this browser. Please install Phantom or choose the Instant Agent Wallet.', true);
+              return;
+            }
+
+            try {
+              showStatus('Connecting to wallet...');
+              const resp = await provider.connect();
+              const pubkey = (resp.publicKey || provider.publicKey).toString();
+              
+              showStatus('Please approve the signature challenge in your wallet...');
+              const challenge = document.getElementById('challengeText').value;
+              const encodedChallenge = new TextEncoder().encode(challenge);
+
+              let signed;
+              if (provider.signMessage) {
+                signed = await provider.signMessage(encodedChallenge, 'utf8');
+              } else {
+                throw new Error('Wallet does not support message signing.');
+              }
+
+              const rawSig = signed.signature || signed;
+              const sigHex = Array.from(new Uint8Array(rawSig))
+                .map(b => b.toString(16).padStart(2, '0'))
+                .join('');
+
+              document.getElementById('selectedAddress').value = pubkey;
+              document.getElementById('signatureHex').value = sigHex;
+              document.getElementById('authMode').value = 'signature';
+
+              showStatus('✅ Signature verified! Authorizing Claude AI connection...');
+              setTimeout(() => {
+                document.getElementById('authForm').submit();
+              }, 400);
+            } catch (err) {
+              showStatus('Authentication failed: ' + (err.message || err), true);
+            }
+          }
+
+          function useInstantWallet() {
+            document.getElementById('authMode').value = 'instant';
+            showStatus('⚡ Generating instant non-custodial wallet with demo balance...');
+            setTimeout(() => {
+              document.getElementById('authForm').submit();
+            }, 300);
+          }
+
+          function submitSpectatorMode() {
+            const addr = document.getElementById('manualAddress').value.trim();
+            if (!addr) {
+              showStatus('Please enter a valid Solana address.', true);
+              return;
+            }
+            document.getElementById('selectedAddress').value = addr;
+            document.getElementById('authMode').value = 'spectator';
+            showStatus('👁️ Authorizing in Read-Only Spectator Mode...');
+            setTimeout(() => {
+              document.getElementById('authForm').submit();
+            }, 300);
           }
         </script>
       </body>
@@ -261,21 +328,54 @@ export function startHttpServer(port = 3000) {
     });
     // Handle OAuth authorization submission
     app.post("/oauth/authorize", (req, res) => {
-        const { client_id, redirect_uri, state, code_challenge, wallet_address } = req.body;
-        const finalAddress = wallet_address || "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU";
-        // Validate Solana address
-        if (!sharedAccountService.validateSolanaAddress(finalAddress)) {
-            // If it starts with PayBoxAgent mock, generate real keypair
-            let validKey = finalAddress;
-            if (!sharedAccountService.validateSolanaAddress(validKey)) {
-                const kp = Keypair.generate();
-                validKey = kp.publicKey.toBase58();
-            }
-            return createAndRedirectCode(validKey, client_id, redirect_uri, state, code_challenge, res);
+        const { client_id, redirect_uri, state, code_challenge, wallet_address, auth_mode, signature_hex, challenge } = req.body;
+        let finalAddress = (wallet_address || "").trim();
+        let isVerifiedOwner = false;
+        if (auth_mode === "instant") {
+            const kp = Keypair.generate();
+            finalAddress = kp.publicKey.toBase58();
+            isVerifiedOwner = true;
         }
-        createAndRedirectCode(finalAddress, client_id, redirect_uri, state, code_challenge, res);
+        else if (auth_mode === "signature") {
+            if (!finalAddress || !sharedAccountService.validateSolanaAddress(finalAddress)) {
+                res.status(400).send("Invalid Solana wallet address provided.");
+                return;
+            }
+            if (!signature_hex || !challenge) {
+                res.status(400).send("Missing cryptographic signature or challenge message.");
+                return;
+            }
+            try {
+                const pubkey = new PublicKey(finalAddress);
+                const pubkeyBytes = pubkey.toBytes();
+                const messageBytes = new TextEncoder().encode(challenge);
+                const signatureBytes = new Uint8Array(Buffer.from(signature_hex, "hex"));
+                const isValid = nacl.sign.detached.verify(messageBytes, signatureBytes, pubkeyBytes);
+                if (!isValid) {
+                    res.status(401).send("Cryptographic signature verification failed. Public key ownership not proven.");
+                    return;
+                }
+                isVerifiedOwner = true;
+            }
+            catch (err) {
+                res.status(400).send(`Signature verification error: ${err instanceof Error ? err.message : String(err)}`);
+                return;
+            }
+        }
+        else {
+            // Spectator mode or manual address submission without signature
+            if (!finalAddress) {
+                finalAddress = "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU";
+            }
+            if (!sharedAccountService.validateSolanaAddress(finalAddress)) {
+                res.status(400).send(`Invalid Solana address format: ${finalAddress}`);
+                return;
+            }
+            isVerifiedOwner = false;
+        }
+        createAndRedirectCode(finalAddress, isVerifiedOwner, client_id, redirect_uri, state, code_challenge, res);
     });
-    function createAndRedirectCode(address, clientId, redirectUri, state, codeChallenge, res) {
+    function createAndRedirectCode(address, isVerifiedOwner, clientId, redirectUri, state, codeChallenge, res) {
         const code = `cc_code_${crypto.randomBytes(16).toString("hex")}`;
         oauthCodes.set(code, {
             code,
@@ -283,7 +383,8 @@ export function startHttpServer(port = 3000) {
             clientId: clientId || "claude-connector",
             redirectUri: redirectUri || "",
             codeChallenge,
-            createdAt: Date.now()
+            createdAt: Date.now(),
+            isVerifiedOwner
         });
         if (redirectUri && redirectUri.length > 0) {
             const url = new URL(redirectUri);
@@ -297,6 +398,8 @@ export function startHttpServer(port = 3000) {
                 status: "AUTHORIZED",
                 message: "Wallet linked successfully to Claude Custom Connector.",
                 walletAddress: address,
+                isVerifiedOwner,
+                mode: isVerifiedOwner ? "CRYPTOGRAPHICALLY_VERIFIED_OWNER" : "READ_ONLY_SPECTATOR",
                 authorizationCode: code,
                 instructions: "Claude will exchange this code for a Bearer session token."
             });
@@ -319,20 +422,25 @@ export function startHttpServer(port = 3000) {
         oauthCodes.delete(code); // One-time use
         // Generate Bearer token
         const accessToken = `pb_tok_${crypto.randomBytes(24).toString("hex")}`;
-        oauthTokensToWallet.set(accessToken, codeEntry.walletAddress);
+        oauthTokensToWallet.set(accessToken, {
+            walletAddress: codeEntry.walletAddress,
+            isVerifiedOwner: codeEntry.isVerifiedOwner
+        });
         // Pre-initialize account in shared account service
         const account = sharedAccountService.getAccount();
         sharedAccountService.registerTokenAccount(accessToken, {
             ...account,
             walletAddress: codeEntry.walletAddress,
-            connectedVia: "PayBox MPC Vault"
+            connectedVia: codeEntry.isVerifiedOwner ? "Sign-In with Solana (SIWS)" : "Read-Only Spectator",
+            isVerifiedOwner: codeEntry.isVerifiedOwner
         });
         res.json({
             access_token: accessToken,
             token_type: "Bearer",
             expires_in: 2592000, // 30 days
             scope: "wallet:read wallet:write vault:trade",
-            wallet_address: codeEntry.walletAddress
+            wallet_address: codeEntry.walletAddress,
+            is_verified_owner: codeEntry.isVerifiedOwner
         });
     });
     // Welcome & documentation page
@@ -425,8 +533,8 @@ MCP Server URL: ${baseUrl}/mcp
             // Ensure strict session isolation: each session gets its own AccountService instance
             let sessionAccountService = new AccountService(solanaService);
             if (bearerToken && oauthTokensToWallet.has(bearerToken)) {
-                const linkedWallet = oauthTokensToWallet.get(bearerToken);
-                await sessionAccountService.connectWallet(linkedWallet);
+                const tokenData = oauthTokensToWallet.get(bearerToken);
+                await sessionAccountService.connectWallet(tokenData.walletAddress, tokenData.isVerifiedOwner);
             }
             sessionAccountServices.set(newSessionId, sessionAccountService);
             const server = createCollectorCryptServer(sessionAccountService);

@@ -28,14 +28,15 @@ export function registerAccountTools(server, accountService, ccService) {
         walletAddress: z.string().describe("Your Solana wallet public key (base58, 32-44 characters)")
     }, async (args) => {
         try {
-            const account = await accountService.connectWallet(args.walletAddress);
+            const account = await accountService.connectWallet(args.walletAddress, false);
             return {
                 content: [
                     {
                         type: "text",
                         text: JSON.stringify({
                             status: "success",
-                            message: `Wallet ${args.walletAddress} successfully linked to your session.`,
+                            message: `Wallet ${args.walletAddress} linked to your session in Read-Only Spectator Mode. Claude can inspect cards, balances, and history. To execute pack rips, buybacks, loans, or card transfers, cryptographic signature verification via the authorization portal is required.`,
+                            isVerifiedOwner: false,
                             account
                         }, null, 2)
                     }
@@ -109,61 +110,72 @@ export function registerAccountTools(server, accountService, ccService) {
         requiresPasskeyAboveUsd: z.number().positive().optional().describe("Threshold above which biometric Passkey confirmation is strictly required"),
         confirmationCode: z.string().optional().describe("Security confirmation code. Must be 'CONFIRM_LIMIT_INCREASE' if increasing any spend limits.")
     }, async (args) => {
-        const current = accountService.getAccount().spendLimits;
-        const MAX_PER_TX_CAP_USD = 500;
-        const MAX_DAILY_CAP_USD = 2000;
-        // 1. Enforce hard platform ceilings to prevent catastrophic unauthorized drain
-        if (args.perTransactionCapUsd !== undefined && args.perTransactionCapUsd > MAX_PER_TX_CAP_USD) {
+        try {
+            // Security Check: Verify cryptographic ownership
+            accountService.requireVerifiedOwner("modify spending safety limits");
+            const current = accountService.getAccount().spendLimits;
+            const MAX_PER_TX_CAP_USD = 500;
+            const MAX_DAILY_CAP_USD = 2000;
+            // 1. Enforce hard platform ceilings to prevent catastrophic unauthorized drain
+            if (args.perTransactionCapUsd !== undefined && args.perTransactionCapUsd > MAX_PER_TX_CAP_USD) {
+                return {
+                    content: [{
+                            type: "text",
+                            text: `Error: Hard safety ceiling exceeded. Maximum allowed per-transaction cap is $${MAX_PER_TX_CAP_USD} USD on public tier to protect your wallet against prompt injection exploits.`
+                        }],
+                    isError: true
+                };
+            }
+            if (args.dailySpendCapUsd !== undefined && args.dailySpendCapUsd > MAX_DAILY_CAP_USD) {
+                return {
+                    content: [{
+                            type: "text",
+                            text: `Error: Hard safety ceiling exceeded. Maximum allowed 24h spend cap is $${MAX_DAILY_CAP_USD} USD on public tier.`
+                        }],
+                    isError: true
+                };
+            }
+            // 2. Prevent autonomous prompt injection: Raising limits requires explicit human confirmation
+            const isIncreasing = (args.perTransactionCapUsd !== undefined && args.perTransactionCapUsd > current.perTransactionCapUsd) ||
+                (args.dailySpendCapUsd !== undefined && args.dailySpendCapUsd > current.dailySpendCapUsd);
+            if (isIncreasing && args.confirmationCode !== "CONFIRM_LIMIT_INCREASE") {
+                return {
+                    content: [{
+                            type: "text",
+                            text: `Security Challenge: Raising your spending limits requires explicit user confirmation to prevent autonomous AI prompt injection. Please call 'set_spend_limits' again with confirmationCode: "CONFIRM_LIMIT_INCREASE".`
+                        }],
+                    isError: true
+                };
+            }
+            const updated = accountService.updateSpendLimits({
+                perTransactionCapUsd: args.perTransactionCapUsd,
+                dailySpendCapUsd: args.dailySpendCapUsd,
+                requiresPasskeyAboveUsd: args.requiresPasskeyAboveUsd
+            });
             return {
-                content: [{
+                content: [
+                    {
                         type: "text",
-                        text: `Error: Hard safety ceiling exceeded. Maximum allowed per-transaction cap is $${MAX_PER_TX_CAP_USD} USD on public tier to protect your wallet against prompt injection exploits.`
-                    }],
+                        text: JSON.stringify({
+                            status: "success",
+                            message: "Spend safety limits updated and persisted.",
+                            currentLimits: updated,
+                            safetyCeilings: {
+                                maxAllowedPerTxUsd: MAX_PER_TX_CAP_USD,
+                                maxAllowedDailyUsd: MAX_DAILY_CAP_USD
+                            }
+                        }, null, 2)
+                    }
+                ]
+            };
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            return {
+                content: [{ type: "text", text: msg }],
                 isError: true
             };
         }
-        if (args.dailySpendCapUsd !== undefined && args.dailySpendCapUsd > MAX_DAILY_CAP_USD) {
-            return {
-                content: [{
-                        type: "text",
-                        text: `Error: Hard safety ceiling exceeded. Maximum allowed 24h spend cap is $${MAX_DAILY_CAP_USD} USD on public tier.`
-                    }],
-                isError: true
-            };
-        }
-        // 2. Prevent autonomous prompt injection: Raising limits requires explicit human confirmation
-        const isIncreasing = (args.perTransactionCapUsd !== undefined && args.perTransactionCapUsd > current.perTransactionCapUsd) ||
-            (args.dailySpendCapUsd !== undefined && args.dailySpendCapUsd > current.dailySpendCapUsd);
-        if (isIncreasing && args.confirmationCode !== "CONFIRM_LIMIT_INCREASE") {
-            return {
-                content: [{
-                        type: "text",
-                        text: `Security Challenge: Raising your spending limits requires explicit user confirmation to prevent autonomous AI prompt injection. Please call 'set_spend_limits' again with confirmationCode: "CONFIRM_LIMIT_INCREASE".`
-                    }],
-                isError: true
-            };
-        }
-        const updated = accountService.updateSpendLimits({
-            perTransactionCapUsd: args.perTransactionCapUsd,
-            dailySpendCapUsd: args.dailySpendCapUsd,
-            requiresPasskeyAboveUsd: args.requiresPasskeyAboveUsd
-        });
-        return {
-            content: [
-                {
-                    type: "text",
-                    text: JSON.stringify({
-                        status: "success",
-                        message: "Spend safety limits updated and persisted.",
-                        currentLimits: updated,
-                        safetyCeilings: {
-                            maxAllowedPerTxUsd: MAX_PER_TX_CAP_USD,
-                            maxAllowedDailyUsd: MAX_DAILY_CAP_USD
-                        }
-                    }, null, 2)
-                }
-            ]
-        };
     });
     // Tool 5: get_transaction_status
     server.tool("get_transaction_status", "Verify the on-chain confirmation status, slot, and timestamp of any transaction by signature or transaction ID.", {

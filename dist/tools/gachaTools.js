@@ -36,6 +36,8 @@ export function registerGachaTools(server, ccService, solanaService, accountServ
     }, async (args) => {
         try {
             const activeAddress = accountService.getActiveAddress(args.userAddress);
+            // Security Check: Verify cryptographic ownership (reject read-only spectator spoofing)
+            accountService.requireVerifiedOwner("open Gacha packs and spend funds");
             const pack = ccService.getPackById(args.packId);
             if (!pack) {
                 return {

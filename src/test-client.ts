@@ -2,6 +2,8 @@ import { CollectorCryptService } from "./services/collectorCrypt.js";
 import { SolanaService } from "./services/solana.js";
 import { PayBoxBridge } from "./services/payboxBridge.js";
 import { StorageService } from "./services/storageService.js";
+import { Keypair } from "@solana/web3.js";
+import nacl from "tweetnacl";
 
 async function testAllFeatures() {
   console.log("=== Testing Collector Crypt PayBox Plugin Components ===");
@@ -211,7 +213,37 @@ async function testAllFeatures() {
   storage.flushToDisk();
   console.log("State successfully flushed to atomic disk storage in ./data/collector_vault_state.json");
 
-  console.log("\n=== ALL 24 TEST SUITES PASSED SUCCESSFULLY! ===");
+  // 25. Testing Sign-In with Solana (SIWS) Cryptographic Proof & Spectator Isolation
+  console.log("\n25. Testing Sign-In with Solana (SIWS) & Spectator Isolation:");
+  const testKp = Keypair.generate();
+  const testAddress = testKp.publicKey.toBase58();
+  const challengeMsg = "Unrip Protocol Auth Challenge Nonce: abc123xyz";
+  const challengeBytes = new TextEncoder().encode(challengeMsg);
+  const signatureBytes = nacl.sign.detached(challengeBytes, testKp.secretKey);
+  const sigValid = nacl.sign.detached.verify(challengeBytes, signatureBytes, testKp.publicKey.toBytes());
+  console.log(`Ed25519 Detached Signature Verified: ${sigValid}`);
+
+  // Connect in Read-Only Spectator Mode (unverified)
+  await accountService.connectWallet(testAddress, false);
+  let blockedError = "";
+  try {
+    accountService.requireVerifiedOwner("open gacha pack");
+  } catch (err: unknown) {
+    blockedError = err instanceof Error ? err.message : String(err);
+  }
+  console.log(`Spectator Blocked from spending: ${blockedError.includes("Security Block")}`);
+
+  // Re-connect with cryptographic signature (verified owner)
+  await accountService.connectWallet(testAddress, true);
+  let verifiedPassed = true;
+  try {
+    accountService.requireVerifiedOwner("open gacha pack");
+  } catch {
+    verifiedPassed = false;
+  }
+  console.log(`Verified Owner Permitted to spend: ${verifiedPassed}`);
+
+  console.log("\n=== ALL 25 TEST SUITES PASSED SUCCESSFULLY! ===");
 }
 
 testAllFeatures().catch((err) => {

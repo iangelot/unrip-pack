@@ -125,6 +125,10 @@ export function registerVaultTools(
     async (args: any) => {
       try {
         const senderAddress = accountService.getActiveAddress(args.userAddress);
+        
+        // Security Check: Verify cryptographic ownership
+        accountService.requireVerifiedOwner("transfer vaulted card NFTs");
+
         const recipientTrimmed = args.recipientAddress.trim();
 
         if (senderAddress === recipientTrimmed) {

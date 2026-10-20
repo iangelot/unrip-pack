@@ -47,6 +47,10 @@ export function registerRedemptionTools(
     async (args: any) => {
       try {
         const activeAddress = accountService.getActiveAddress(args.userAddress);
+        
+        // Security Check: Verify cryptographic ownership
+        accountService.requireVerifiedOwner("sell cards via instant buyback");
+
         const quote = ccService.getInstantBuybackQuote(args.cardId);
 
         // Remove card from user's collection
@@ -179,6 +183,10 @@ export function registerRedemptionTools(
     async (args: any) => {
       try {
         const activeAddress = accountService.getActiveAddress(args.userAddress);
+        
+        // Security Check: Verify cryptographic ownership
+        accountService.requireVerifiedOwner("burn NFTs and physically redeem vaulted slabs");
+
         const quote = ccService.getPhysicalRedemptionQuote(args.cardId, args.destinationCountry);
 
         // 1. Financial check FIRST before touching the user's card collection

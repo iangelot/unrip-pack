@@ -22,8 +22,14 @@ export declare class AccountService {
     };
     /**
      * Link or change the connected wallet address
+     * @param isVerifiedOwner Whether the connection was authenticated via cryptographic signature (SIWS) or passkey
      */
-    connectWallet(address: string): Promise<UserAccount>;
+    connectWallet(address: string, isVerifiedOwner?: boolean): Promise<UserAccount>;
+    /**
+     * Security Guardrail: Prevent unauthorized execution by address spoofing
+     * Blocks money-moving actions if connected in unverified / read-only spectator mode.
+     */
+    requireVerifiedOwner(actionName: string): void;
     /**
      * Map OAuth bearer token to a specific wallet account
      */

@@ -100,7 +100,7 @@ export interface SpendLimits {
 
 export interface UserAccount {
   walletAddress: string;
-  connectedVia: "PayBox MPC Vault" | "Solana Native" | "Default Agent Session";
+  connectedVia: "PayBox MPC Vault" | "Solana Native" | "Default Agent Session" | "Sign-In with Solana (SIWS)" | "Read-Only Spectator";
   isConnected: boolean;
   balances: {
     sol: number;
@@ -108,6 +108,7 @@ export interface UserAccount {
     cards: number;
   };
   spendLimits: SpendLimits;
+  isVerifiedOwner?: boolean; // Cryptographically proven owner via private key signature or MPC keypair
   createdAt: string;
   lastActive: string;
 }

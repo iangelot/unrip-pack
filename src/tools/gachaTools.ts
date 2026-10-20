@@ -62,6 +62,10 @@ export function registerGachaTools(
     async (args: any) => {
       try {
         const activeAddress = accountService.getActiveAddress(args.userAddress);
+        
+        // Security Check: Verify cryptographic ownership (reject read-only spectator spoofing)
+        accountService.requireVerifiedOwner("open Gacha packs and spend funds");
+
         const pack = ccService.getPackById(args.packId);
         if (!pack) {
           return {

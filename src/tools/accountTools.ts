@@ -46,14 +46,15 @@ export function registerAccountTools(
     },
     async (args: any) => {
       try {
-        const account = await accountService.connectWallet(args.walletAddress);
+        const account = await accountService.connectWallet(args.walletAddress, false);
         return {
           content: [
             {
               type: "text",
               text: JSON.stringify({
                 status: "success",
-                message: `Wallet ${args.walletAddress} successfully linked to your session.`,
+                message: `Wallet ${args.walletAddress} linked to your session in Read-Only Spectator Mode. Claude can inspect cards, balances, and history. To execute pack rips, buybacks, loans, or card transfers, cryptographic signature verification via the authorization portal is required.`,
+                isVerifiedOwner: false,
                 account
               }, null, 2)
             }
@@ -143,9 +144,13 @@ export function registerAccountTools(
       confirmationCode: z.string().optional().describe("Security confirmation code. Must be 'CONFIRM_LIMIT_INCREASE' if increasing any spend limits.")
     },
     async (args: any) => {
-      const current = accountService.getAccount().spendLimits;
-      const MAX_PER_TX_CAP_USD = 500;
-      const MAX_DAILY_CAP_USD = 2000;
+      try {
+        // Security Check: Verify cryptographic ownership
+        accountService.requireVerifiedOwner("modify spending safety limits");
+
+        const current = accountService.getAccount().spendLimits;
+        const MAX_PER_TX_CAP_USD = 500;
+        const MAX_DAILY_CAP_USD = 2000;
 
       // 1. Enforce hard platform ceilings to prevent catastrophic unauthorized drain
       if (args.perTransactionCapUsd !== undefined && args.perTransactionCapUsd > MAX_PER_TX_CAP_USD) {
@@ -189,22 +194,29 @@ export function registerAccountTools(
         requiresPasskeyAboveUsd: args.requiresPasskeyAboveUsd
       });
 
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({
-              status: "success",
-              message: "Spend safety limits updated and persisted.",
-              currentLimits: updated,
-              safetyCeilings: {
-                maxAllowedPerTxUsd: MAX_PER_TX_CAP_USD,
-                maxAllowedDailyUsd: MAX_DAILY_CAP_USD
-              }
-            }, null, 2)
-          }
-        ]
-      };
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                status: "success",
+                message: "Spend safety limits updated and persisted.",
+                currentLimits: updated,
+                safetyCeilings: {
+                  maxAllowedPerTxUsd: MAX_PER_TX_CAP_USD,
+                  maxAllowedDailyUsd: MAX_DAILY_CAP_USD
+                }
+              }, null, 2)
+            }
+          ]
+        };
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return {
+          content: [{ type: "text", text: msg }],
+          isError: true
+        };
+      }
     }
   );
 

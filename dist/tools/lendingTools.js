@@ -95,6 +95,8 @@ export function registerLendingTools(server, ccService, accountService) {
     }, async (args) => {
         try {
             const activeAddress = accountService.getActiveAddress(args.userAddress);
+            // Security Check: Verify cryptographic ownership
+            accountService.requireVerifiedOwner("borrow USDC against vaulted cards");
             const userCards = ccService.getUserVaultCards(activeAddress, 100);
             const card = userCards.cards.find(c => c.id === args.cardId || c.nftMint === args.cardId);
             if (!card) {

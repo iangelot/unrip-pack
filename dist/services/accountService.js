@@ -32,6 +32,7 @@ export class AccountService {
                     dailySpentSoFarUsd: 35,
                     requiresPasskeyAboveUsd: 50
                 },
+                isVerifiedOwner: true,
                 createdAt: new Date(Date.now() - 86400000 * 7).toISOString(),
                 lastActive: new Date().toISOString()
             };
@@ -125,6 +126,7 @@ export class AccountService {
                 dailySpentSoFarUsd: 0,
                 requiresPasskeyAboveUsd: 75
             },
+            isVerifiedOwner: true,
             createdAt: new Date().toISOString(),
             lastActive: new Date().toISOString()
         };
@@ -148,8 +150,9 @@ export class AccountService {
     }
     /**
      * Link or change the connected wallet address
+     * @param isVerifiedOwner Whether the connection was authenticated via cryptographic signature (SIWS) or passkey
      */
-    async connectWallet(address) {
+    async connectWallet(address, isVerifiedOwner = false) {
         const trimmed = address.trim();
         if (!this.validateSolanaAddress(trimmed)) {
             throw new Error(`Invalid Solana address "${address}". A valid Solana address must be a base58 string 32-44 characters long.`);
@@ -159,6 +162,7 @@ export class AccountService {
         if (existing) {
             this.activeAccount = {
                 ...existing,
+                isVerifiedOwner: isVerifiedOwner || existing.isVerifiedOwner || false,
                 isConnected: true,
                 lastActive: new Date().toISOString()
             };
@@ -168,6 +172,7 @@ export class AccountService {
                 walletAddress: trimmed,
                 connectedVia: "Solana Native",
                 isConnected: true,
+                isVerifiedOwner,
                 balances: { sol: 0, usdc: 0, cards: 0 },
                 spendLimits: {
                     perTransactionCapUsd: 100,
@@ -191,6 +196,15 @@ export class AccountService {
         }
         this.storage.saveAccount(this.activeAccount);
         return this.activeAccount;
+    }
+    /**
+     * Security Guardrail: Prevent unauthorized execution by address spoofing
+     * Blocks money-moving actions if connected in unverified / read-only spectator mode.
+     */
+    requireVerifiedOwner(actionName) {
+        if (this.activeAccount.isVerifiedOwner === false) {
+            throw new Error(`Security Block: Wallet ${this.activeAccount.walletAddress} is connected in Read-Only Spectator Mode. To ${actionName}, you must prove cryptographic ownership by signing in with Phantom/Solflare or PayBox Passkey at the authorization portal.`);
+        }
     }
     /**
      * Map OAuth bearer token to a specific wallet account
