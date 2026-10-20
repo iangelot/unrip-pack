@@ -8,10 +8,14 @@ This repository is an MCP server that is intended to let an AI assistant read Co
 | --- | --- |
 | Phantom wallet identity link | Signs a one-time off-chain challenge; it does not send a Solana transaction. This is a direct browser-wallet flow, not PayBox wallet authorization. |
 | SOL / SPL balances | Read from Solana RPC for the selected public address. |
+| Portfolio summary | Shows RPC token balances only. It does not add sandbox cards, guessed prices, or simulated pack PnL to net worth. |
+| Transaction status | Looks up a full base58 signature on the configured Solana RPC; local records are clearly separate and cannot prove settlement. |
 | Gacha machines and recent winners | Read from Collector Crypt's public Gacha API. These are platform API records, not independently verified by this server. |
 | Pack counts and memo status | Read from Collector Crypt's public Gacha API for a wallet or memo. This does not enumerate all NFTs in a wallet. |
 | Local seeded card examples and local history | Sandbox examples only; they are not verified Collector Crypt records or wallet holdings. |
 | Pack purchases, openings, buybacks, swaps, loans, card transfers, and redemption | Disabled. No live settlement is implemented in this repository. |
+
+`get_user_collection` currently reports the collection as unavailable and suppresses local sandbox cards. Live Collector Crypt card ownership, NFT metadata, and trustworthy valuations still need an indexed ownership source and a separate implementation.
 
 The sandbox response fields and tool descriptions are intentional. Never treat sandbox values, estimated card prices, or locally recorded activity as assets, payouts, or transaction receipts.
 
@@ -49,4 +53,3 @@ npm run test:wallet-portfolio
 ```
 
 The Collector Crypt API integration test uses a mocked HTTP client. It verifies request paths, query encoding, and error handling without making purchases or touching a wallet.
-
