@@ -25,7 +25,7 @@ export function createCollectorCryptServer(accountServiceInstance?: AccountServi
   });
 
   // Register all tool suites
-  registerAccountTools(server, accountService, ccService);
+  registerAccountTools(server, accountService, ccService, solanaService);
   registerVaultTools(server, ccService, accountService);
   registerGachaTools(server, ccService, solanaService, accountService);
   registerTokenTools(server, ccService, solanaService, accountService);
