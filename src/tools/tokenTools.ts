@@ -3,6 +3,7 @@ import { CollectorCryptService } from "../services/collectorCrypt.js";
 import { SolanaService } from "../services/solana.js";
 import { AccountService } from "../services/accountService.js";
 import { PayBoxBridge } from "../services/payboxBridge.js";
+import { hasLiveSettlement, liveSettlementUnavailable } from "../services/liveSettlement.js";
 
 export function registerTokenTools(
   server: any,
@@ -13,7 +14,7 @@ export function registerTokenTools(
   // Tool 1: get_cards_token_info
   server.tool(
     "get_cards_token_info",
-    "Get live $CARDS token metrics on Solana, including current price, 24h performance, market cap, circulating supply, and community buyback fund status.",
+    "Get hard-coded sandbox $CARDS estimates. Market metrics and buyback fund balances are not live or verified.",
     {},
     async () => {
       const stats = await ccService.getCardsTokenStats();
@@ -21,7 +22,7 @@ export function registerTokenTools(
         content: [
           {
             type: "text",
-            text: JSON.stringify(stats, null, 2)
+            text: JSON.stringify({ ...stats, dataMode: "sandbox", marketDataVerified: false }, null, 2)
           }
         ]
       };
@@ -38,7 +39,7 @@ export function registerTokenTools(
     async (args: any) => {
       try {
         const activeAddress = accountService.getActiveAddress(args.userAddress);
-        const account = accountService.getAccount();
+        const balances = await solanaService.getBalances(activeAddress);
 
         return {
           content: [
@@ -46,7 +47,8 @@ export function registerTokenTools(
               type: "text",
               text: JSON.stringify({
                 address: activeAddress,
-                balances: account.balances,
+                balances,
+                source: "Solana RPC",
                 solanaExplorerUrl: `https://solscan.io/account/${activeAddress}`
               }, null, 2)
             }
@@ -72,6 +74,7 @@ export function registerTokenTools(
       slippagePercent: z.number().optional().default(0.5).describe("Max allowed slippage (default 0.5%)")
     },
     async (args: any) => {
+      if (!hasLiveSettlement()) return liveSettlementUnavailable("execute_token_swap");
       try {
         const tokenStats = await ccService.getCardsTokenStats();
         const price = tokenStats.priceUsd;
@@ -159,6 +162,7 @@ export function registerTokenTools(
       userAddress: z.string().optional().describe("Optional explicit Solana wallet address. Defaults to connected session wallet.")
     },
     async (args: any) => {
+      if (!hasLiveSettlement()) return liveSettlementUnavailable("prepare_swap_cards");
       const activeAddress = accountService.getActiveAddress(args.userAddress);
       const tokenStats = await ccService.getCardsTokenStats();
       const price = tokenStats.priceUsd;
