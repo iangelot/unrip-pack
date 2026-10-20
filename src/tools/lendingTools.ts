@@ -2,6 +2,7 @@ import { z } from "zod";
 import { CollectorCryptService } from "../services/collectorCrypt.js";
 import { PayBoxBridge } from "../services/payboxBridge.js";
 import { CONFIG } from "../config.js";
+import { hasLiveSettlement, liveSettlementUnavailable } from "../services/liveSettlement.js";
 
 import { AccountService } from "../services/accountService.js";
 
@@ -13,7 +14,7 @@ export function registerLendingTools(
   // Tool: get_lending_terms
   server.tool(
     "get_lending_terms",
-    "Calculate DeFi collateralized loan terms for a tokenized card NFT. Returns maximum borrowable USDC, LTV percentage, APR, and liquidation threshold without selling the physical card.",
+    "Calculate a sandbox loan estimate only. No lending pool, collateral escrow, or loan settlement is integrated.",
     {
       cardId: z.string().describe("The card ID (e.g. 'cc-pkmn-001') or NFT mint address")
     },
@@ -47,7 +48,7 @@ export function registerLendingTools(
       };
 
       return {
-        content: [{ type: "text", text: JSON.stringify(terms, null, 2) }]
+        content: [{ type: "text", text: JSON.stringify({ ...terms, dataMode: "sandbox", lendingAvailable: false }, null, 2) }]
       };
     }
   );
@@ -63,6 +64,7 @@ export function registerLendingTools(
       userAddress: z.string().optional().describe("Optional explicit Solana wallet address. Defaults to connected session wallet.")
     },
     async (args: any) => {
+      if (!hasLiveSettlement()) return liveSettlementUnavailable("prepare_card_loan");
       const activeAddress = accountService.getActiveAddress(args.userAddress);
       const card = ccService.getCardById(args.cardId);
       if (!card) {
@@ -124,6 +126,7 @@ export function registerLendingTools(
       userAddress: z.string().optional().describe("Optional explicit Solana wallet address. Defaults to connected session wallet.")
     },
     async (args: any) => {
+      if (!hasLiveSettlement()) return liveSettlementUnavailable("execute_card_loan");
       try {
         const activeAddress = accountService.getActiveAddress(args.userAddress);
         
@@ -189,4 +192,3 @@ export function registerLendingTools(
     }
   );
 }
-
