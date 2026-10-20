@@ -116,15 +116,15 @@ export function startHttpServer(port: number = 3000) {
     };
   };
 
-  app.get("/.well-known/oauth-authorization-server", (req: Request, res: Response) => {
+  app.get(["/.well-known/oauth-authorization-server", "/.well-known/oauth-authorization-server/*"], (req: Request, res: Response) => {
     res.json(getDiscoveryMetadata(req));
   });
 
-  app.get("/.well-known/openid-configuration", (req: Request, res: Response) => {
+  app.get(["/.well-known/openid-configuration", "/.well-known/openid-configuration/*"], (req: Request, res: Response) => {
     res.json(getDiscoveryMetadata(req));
   });
 
-  app.get("/.well-known/oauth-protected-resource", (req: Request, res: Response) => {
+  app.get(["/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/*"], (req: Request, res: Response) => {
     const proto = req.headers["x-forwarded-proto"] || "https";
     const host = req.headers.host || "paybox-collectorcrypt-mcp.onrender.com";
     const baseUrl = `${proto}://${host}`;
@@ -584,9 +584,45 @@ MCP Server URL: ${baseUrl}/mcp
       req.headers["accept"] = "application/json, text/event-stream";
     }
 
+    const proto = req.headers["x-forwarded-proto"] || "https";
+    const host = req.headers.host || "paybox-collectorcrypt-mcp.onrender.com";
+    const baseUrl = `${proto}://${host}`;
+
     const sessionId = (req.headers["mcp-session-id"] as string) || (req.query.sessionId as string);
     const authHeader = req.headers["authorization"] as string | undefined;
     const bearerToken = authHeader?.replace(/^Bearer\s+/i, "");
+
+    // Allow sandbox test bypass only when explicitly flagged
+    const isSandboxBypass = req.query.sandbox === "true" || req.headers["x-sandbox-bypass"] === "true";
+
+    // RFC 9728 & Model Context Protocol Security Spec:
+    // If client does not provide Bearer credentials, respond with HTTP 401 and WWW-Authenticate
+    // This tells Claude's connector wizard that OAuth sign-in is required ("Sign in now [Detected]").
+    if (!bearerToken && !isSandboxBypass) {
+      res.setHeader(
+        "WWW-Authenticate",
+        `Bearer resource_metadata="${baseUrl}/.well-known/oauth-protected-resource"`
+      );
+      res.status(401).json({
+        error: "unauthorized",
+        error_description: "Sign-In with Solana required via Unrip OAuth.",
+        resource_metadata: `${baseUrl}/.well-known/oauth-protected-resource`
+      });
+      return;
+    }
+
+    if (bearerToken && !oauthTokensToWallet.has(bearerToken) && !isSandboxBypass) {
+      res.setHeader(
+        "WWW-Authenticate",
+        `Bearer error="invalid_token", resource_metadata="${baseUrl}/.well-known/oauth-protected-resource"`
+      );
+      res.status(401).json({
+        error: "invalid_token",
+        error_description: "Access token is invalid or expired.",
+        resource_metadata: `${baseUrl}/.well-known/oauth-protected-resource`
+      });
+      return;
+    }
 
     let transport: StreamableHTTPServerTransport;
 
