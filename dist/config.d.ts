@@ -6,6 +6,8 @@ export declare const CONFIG: {
     COLLECTOR_TREASURY_WALLET: string;
     PAYBOX_DEFAULT_SLIPPAGE_BPS: number;
     PAYBOX_MAX_AUTONOMOUS_USD: number;
+    COLLECTOR_CRYPT_GACHA_API_BASE_URL: string;
     JUPITER_PRICE_API: string;
     JUPITER_QUOTE_API: string;
 };
+
