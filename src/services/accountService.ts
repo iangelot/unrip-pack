@@ -273,6 +273,25 @@ export class AccountService {
     };
   }
 
+  /** Apply configured spending limits without relying on a possibly stale cached RPC balance. */
+  public verifySpendLimits(amountUsd: number): {
+    allowed: boolean;
+    requiresPasskeyPrompt: boolean;
+    errorReason?: string;
+  } {
+    if (!Number.isFinite(amountUsd) || amountUsd <= 0) {
+      return { allowed: false, requiresPasskeyPrompt: false, errorReason: "Invalid transaction amount: Amount must be a positive finite number." };
+    }
+    const limits = this.activeAccount.spendLimits;
+    if (amountUsd > limits.perTransactionCapUsd) {
+      return { allowed: false, requiresPasskeyPrompt: true, errorReason: `Amount of $${amountUsd} USD exceeds your per-transaction spend limit ($${limits.perTransactionCapUsd} USD). Adjust the limit or lower the purchase amount.` };
+    }
+    if (limits.dailySpentSoFarUsd + amountUsd > limits.dailySpendCapUsd) {
+      return { allowed: false, requiresPasskeyPrompt: true, errorReason: `Amount of $${amountUsd} USD would exceed your 24h spend cap ($${limits.dailySpendCapUsd} USD). Currently spent today: $${limits.dailySpentSoFarUsd} USD.` };
+    }
+    return { allowed: true, requiresPasskeyPrompt: amountUsd >= limits.requiresPasskeyAboveUsd };
+  }
+
   /**
    * Record expenditure against daily cap
    */
@@ -471,3 +490,4 @@ export class AccountService {
     };
   }
 }
+
