@@ -114,7 +114,6 @@ export function registerRedemptionTools(
       destinationCountry: z.string().optional().default("US").describe("Two-letter country code or country name (e.g., 'US', 'GB', 'CA', 'JP')")
     },
     async (args: any) => {
-      if (!hasLiveSettlement()) return liveSettlementUnavailable("prepare_physical_redemption");
       try {
         const quote = ccService.getPhysicalRedemptionQuote(args.cardId, args.destinationCountry);
         return {
@@ -145,6 +144,7 @@ export function registerRedemptionTools(
       userAddress: z.string().optional().describe("Optional explicit Solana wallet address. Defaults to connected session wallet.")
     },
     async (args: any) => {
+      if (!hasLiveSettlement()) return liveSettlementUnavailable("prepare_physical_redemption");
       try {
         const activeAddress = accountService.getActiveAddress(args.userAddress);
         const quote = ccService.getPhysicalRedemptionQuote(args.cardId, args.destinationCountry);
