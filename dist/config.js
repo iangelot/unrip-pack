@@ -13,6 +13,7 @@ export const CONFIG = {
     PAYBOX_DEFAULT_SLIPPAGE_BPS: 50, // 0.5%
     PAYBOX_MAX_AUTONOMOUS_USD: 100, // Safe threshold before requesting explicit passkey confirmation
     // External APIs
+    COLLECTOR_CRYPT_GACHA_API_BASE_URL: process.env.COLLECTOR_CRYPT_GACHA_API_BASE_URL || "https://gacha.collectorcrypt.com",
     JUPITER_PRICE_API: "https://api.jup.ag/price/v2",
     JUPITER_QUOTE_API: "https://quote-api.jup.ag/v6"
 };
