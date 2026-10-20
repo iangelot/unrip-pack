@@ -138,7 +138,7 @@ export function registerAccountTools(
 
   server.tool(
     "get_wallet_nft_inventory",
-    "List standard Solana NFTs currently held by a wallet by checking Token and Token-2022 ownership plus mint supply of one and zero decimals on-chain. Compressed NFTs are not included, and this does not assign collectible identity or value.",
+    "List standard Solana NFTs currently held by a wallet by checking Token and Token-2022 ownership plus mint supply of one and zero decimals on-chain. Includes name, symbol, and metadata URI only when a Metaplex metadata account exists. Compressed NFTs are not included, and no collectible value is inferred.",
     {
       userAddress: z.string().optional().describe("Optional Solana wallet address. Defaults to the connected session wallet.")
     },
