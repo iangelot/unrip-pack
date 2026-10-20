@@ -5,8 +5,8 @@ import { UserAccount, VaultedCard, OpenedPackRecord, TransactionRecord } from ".
 interface PersistentData {
   accounts: Record<string, UserAccount>;
   userCardPortfolios: Record<string, VaultedCard[]>;
-  packHistory: OpenedPackRecord[];
-  transactionHistory: TransactionRecord[];
+  packHistory: Record<string, OpenedPackRecord[]>;
+  transactionHistory: Record<string, TransactionRecord[]>;
   lastUpdated: string;
 }
 
@@ -45,7 +45,15 @@ export class StorageService {
         const raw = fs.readFileSync(this.dataFilePath, "utf-8");
         const parsed = JSON.parse(raw);
         console.log(`[StorageService] Loaded persistent state from ${this.dataFilePath}`);
-        return parsed;
+        // Legacy versions stored these histories globally. Discard those rows
+        // instead of attributing one wallet's activity to every connected user.
+        return {
+          accounts: parsed.accounts || {},
+          userCardPortfolios: parsed.userCardPortfolios || {},
+          packHistory: Array.isArray(parsed.packHistory) ? {} : (parsed.packHistory || {}),
+          transactionHistory: Array.isArray(parsed.transactionHistory) ? {} : (parsed.transactionHistory || {}),
+          lastUpdated: parsed.lastUpdated || new Date().toISOString()
+        };
       }
     } catch (err) {
       console.warn("[StorageService] Failed to load persistent state, initializing fresh:", err);
@@ -54,8 +62,8 @@ export class StorageService {
     return {
       accounts: {},
       userCardPortfolios: {},
-      packHistory: [],
-      transactionHistory: [],
+      packHistory: {},
+      transactionHistory: {},
       lastUpdated: new Date().toISOString()
     };
   }
@@ -105,22 +113,22 @@ export class StorageService {
   }
 
   // Pack history
-  public getPackHistory(): OpenedPackRecord[] {
-    return this.data.packHistory || [];
+  public getPackHistory(address: string): OpenedPackRecord[] {
+    return this.data.packHistory[address] || [];
   }
 
-  public savePackHistory(history: OpenedPackRecord[]) {
-    this.data.packHistory = history;
+  public savePackHistory(address: string, history: OpenedPackRecord[]) {
+    this.data.packHistory[address] = history;
     this.scheduleSave();
   }
 
   // Transaction history
-  public getTransactionHistory(): TransactionRecord[] {
-    return this.data.transactionHistory || [];
+  public getTransactionHistory(address: string): TransactionRecord[] {
+    return this.data.transactionHistory[address] || [];
   }
 
-  public saveTransactionHistory(history: TransactionRecord[]) {
-    this.data.transactionHistory = history;
+  public saveTransactionHistory(address: string, history: TransactionRecord[]) {
+    this.data.transactionHistory[address] = history;
     this.scheduleSave();
   }
 }

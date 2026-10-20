@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { CollectorCryptService } from "../services/collectorCrypt.js";
 import { AccountService } from "../services/accountService.js";
+import { hasLiveSettlement, liveSettlementUnavailable } from "../services/liveSettlement.js";
 
 export function registerVaultTools(
   server: any,
@@ -10,7 +11,7 @@ export function registerVaultTools(
   // Tool 1: get_vault_inventory
   server.tool(
     "get_vault_inventory",
-    "Browse and search physical collectibles authenticated and vaulted in Collector Crypt partner facilities (PSA/PWCC/ALT). Filter by franchise, grade, or price.",
+    "Browse hard-coded sandbox collectible examples. Inventory, vault custody, and prices are not live or verified.",
     {
       query: z.string().optional().describe("Search term like 'Charizard', 'Luffy', 'Jordan', or 'Black Lotus'"),
       category: z.enum(["All", "Pokemon", "Sports", "OnePiece", "MagicTheGathering", "Other"]).optional().describe("Collectibles category"),
@@ -33,7 +34,7 @@ export function registerVaultTools(
         content: [
           {
             type: "text",
-            text: JSON.stringify(results, null, 2)
+            text: JSON.stringify({ ...results, dataMode: "sandbox", inventoryVerified: false }, null, 2)
           }
         ]
       };
@@ -65,7 +66,7 @@ export function registerVaultTools(
         content: [
           {
             type: "text",
-            text: JSON.stringify(card, null, 2)
+              text: JSON.stringify({ dataMode: "sandbox", custodyVerified: false, card }, null, 2)
           }
         ]
       };
@@ -98,6 +99,8 @@ export function registerVaultTools(
                 hasMore: result.hasMore,
                 nextOffset: result.nextOffset,
                 estimatedPortfolioValueUsdc: totalPortfolioValueUsdc,
+                dataMode: "sandbox",
+                collectionSource: "local simulation; not verified against on-chain NFTs",
                 cards: result.cards
               }, null, 2)
             }
@@ -123,6 +126,7 @@ export function registerVaultTools(
       userAddress: z.string().optional().describe("Optional sender address. Defaults to connected session wallet.")
     },
     async (args: any) => {
+      if (!hasLiveSettlement()) return liveSettlementUnavailable("transfer_vault_card");
       try {
         const senderAddress = accountService.getActiveAddress(args.userAddress);
         
@@ -200,4 +204,3 @@ export function registerVaultTools(
     }
   );
 }
-

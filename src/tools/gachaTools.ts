@@ -5,6 +5,7 @@ import { SolanaService } from "../services/solana.js";
 import { AccountService } from "../services/accountService.js";
 import { PayBoxBridge } from "../services/payboxBridge.js";
 import { CONFIG } from "../config.js";
+import { hasLiveSettlement, liveSettlementUnavailable } from "../services/liveSettlement.js";
 
 export function registerGachaTools(
   server: any,
@@ -15,7 +16,7 @@ export function registerGachaTools(
   // Tool 1: get_trending_packs (Specifically answers "whats the most trending pack on the market")
   server.tool(
     "get_trending_packs",
-    "Identify the most trending, highest velocity, and popular Gacha packs on the market. Returns #1 trending pack, 24h pack opening volume, popularity ranking, trending score (0-100), and recent grail pulls.",
+    "Show hard-coded sandbox pack popularity examples. The figures are not live market or platform activity.",
     {},
     async () => {
       const trending = ccService.getTrendingPacks();
@@ -23,7 +24,7 @@ export function registerGachaTools(
         content: [
           {
             type: "text",
-            text: JSON.stringify(trending, null, 2)
+              text: JSON.stringify({ ...trending, dataMode: "sandbox", marketDataVerified: false }, null, 2)
           }
         ]
       };
@@ -41,7 +42,7 @@ export function registerGachaTools(
         content: [
           {
             type: "text",
-            text: JSON.stringify({ activePacks: packs }, null, 2)
+              text: JSON.stringify({ dataMode: "sandbox", marketDataVerified: false, activePacks: packs }, null, 2)
           }
         ]
       };
@@ -60,6 +61,7 @@ export function registerGachaTools(
       userAddress: z.string().optional().describe("Optional explicit Solana address. Defaults to your connected session wallet.")
     },
     async (args: any) => {
+      if (!hasLiveSettlement()) return liveSettlementUnavailable("open_gacha_pack");
       try {
         const activeAddress = accountService.getActiveAddress(args.userAddress);
         
@@ -155,6 +157,7 @@ export function registerGachaTools(
           {
             type: "text",
             text: JSON.stringify({
+              dataMode: "sandbox",
               totalPacksOpened: history.totalOpened,
               allTimeNetPnlUsdc: `${allTimePnl >= 0 ? "+" : ""}$${allTimePnl} USDC`,
               packs: history.history.map(h => ({
@@ -183,6 +186,7 @@ export function registerGachaTools(
       userAddress: z.string().optional().describe("Optional explicit Solana wallet address. Defaults to connected session wallet.")
     },
     async (args: any) => {
+      if (!hasLiveSettlement()) return liveSettlementUnavailable("prepare_buy_gacha_pack");
       const activeAddress = accountService.getActiveAddress(args.userAddress);
       const pack = ccService.getPackById(args.packId);
       if (!pack) {

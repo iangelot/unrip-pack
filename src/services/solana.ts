@@ -35,7 +35,7 @@ export class SolanaService {
       const pubkey = new PublicKey(userAddress);
       
       // Get SOL Balance
-      const lamports = await this.connection.getBalance(pubkey).catch(() => 0);
+      const lamports = await this.connection.getBalance(pubkey);
       const sol = lamports / LAMPORTS_PER_SOL;
 
       // Get USDC Balance
@@ -43,10 +43,12 @@ export class SolanaService {
       try {
         const usdcMint = new PublicKey(CONFIG.USDC_MINT_ADDRESS);
         const usdcAta = getAssociatedTokenAddressSync(usdcMint, pubkey);
-        const usdcAccount = await this.connection.getTokenAccountBalance(usdcAta);
-        usdc = usdcAccount.value.uiAmount ?? 0;
+        if (await this.connection.getAccountInfo(usdcAta)) {
+          const usdcAccount = await this.connection.getTokenAccountBalance(usdcAta);
+          usdc = usdcAccount.value.uiAmount ?? 0;
+        }
       } catch {
-        usdc = 0;
+        throw new Error("Failed to read the USDC token account from Solana RPC.");
       }
 
       // Get CARDS Balance
@@ -54,10 +56,12 @@ export class SolanaService {
       try {
         const cardsMint = new PublicKey(CONFIG.CARDS_MINT_ADDRESS);
         const cardsAta = getAssociatedTokenAddressSync(cardsMint, pubkey);
-        const cardsAccount = await this.connection.getTokenAccountBalance(cardsAta);
-        cards = cardsAccount.value.uiAmount ?? 0;
+        if (await this.connection.getAccountInfo(cardsAta)) {
+          const cardsAccount = await this.connection.getTokenAccountBalance(cardsAta);
+          cards = cardsAccount.value.uiAmount ?? 0;
+        }
       } catch {
-        cards = 0;
+        throw new Error("Failed to read the CARDS token account from Solana RPC.");
       }
 
       return {

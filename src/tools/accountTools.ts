@@ -1,19 +1,25 @@
 import { z } from "zod";
 import { AccountService } from "../services/accountService.js";
 import { CollectorCryptService } from "../services/collectorCrypt.js";
+import { SolanaService } from "../services/solana.js";
+import { hasLiveSettlement, liveSettlementUnavailable } from "../services/liveSettlement.js";
 
 export function registerAccountTools(
   server: any,
   accountService: AccountService,
-  ccService: CollectorCryptService
+  ccService: CollectorCryptService,
+  solanaService: SolanaService
 ) {
   // Tool 1: get_account
   server.tool(
     "get_account",
-    "Get current connected wallet address, live SOL/USDC/CARDS balances, spend limits, and connection status. Does NOT require userAddress.",
+    "Get the connected wallet address, current Solana RPC balances, spend settings, and connection status.",
     {},
     async () => {
       const account = accountService.getAccount();
+      const liveBalances = account.isConnected
+        ? await solanaService.getBalances(account.walletAddress)
+        : { sol: 0, usdc: 0, cards: 0 };
       const dailyRemaining = Math.max(0, account.spendLimits.dailySpendCapUsd - account.spendLimits.dailySpentSoFarUsd);
 
       return {
@@ -24,7 +30,8 @@ export function registerAccountTools(
               walletAddress: account.walletAddress,
               connectedVia: account.connectedVia,
               isConnected: account.isConnected,
-              balances: account.balances,
+              balances: liveBalances,
+              balanceSource: account.isConnected ? "Solana RPC" : "unavailable: no connected wallet",
               safetyLimits: {
                 ...account.spendLimits,
                 dailyRemainingBudgetUsd: dailyRemaining
@@ -40,7 +47,7 @@ export function registerAccountTools(
   // Tool 2: connect_wallet
   server.tool(
     "connect_wallet",
-    "Link a Solana wallet address to your session so all cards, balances, and actions automatically resolve to this wallet without needing to repeat the address.",
+    "Link a Solana wallet address to this read-only session. Simulated card and transaction tools are not enabled for settlement.",
     {
       walletAddress: z.string().describe("Your Solana wallet public key (base58, 32-44 characters)")
     },
@@ -73,7 +80,7 @@ export function registerAccountTools(
   // Tool 3: get_portfolio_summary
   server.tool(
     "get_portfolio_summary",
-    "Retrieve a consolidated, one-call portfolio summary: total card count, total estimated collection value in USDC, balances, top valued cards, and all-time pack PnL. Does NOT require userAddress.",
+    "Retrieve live Solana token balances and local sandbox collection/history data. Card holdings and pack history are not verified on-chain.",
     {
       userAddress: z.string().optional().describe("Optional explicit Solana address. Defaults to your connected session wallet.")
     },
@@ -81,16 +88,16 @@ export function registerAccountTools(
       try {
         const activeAddress = accountService.getActiveAddress(args.userAddress);
         const userCards = ccService.getUserVaultCards(activeAddress, 100);
-        const account = accountService.getAccount();
-        const packHist = accountService.getPackHistory(100);
+        const liveBalances = await solanaService.getBalances(activeAddress);
+        const packHist = accountService.getPackHistory(100, activeAddress);
 
         const totalCardValue = userCards.cards.reduce((sum, c) => sum + c.estimatedValueUsdc, 0);
         const solPriceProxy = 185.0;
         const cardsPriceProxy = 0.0205;
         const totalTokenValue = 
-          account.balances.usdc +
-          (account.balances.sol * solPriceProxy) +
-          (account.balances.cards * cardsPriceProxy);
+          liveBalances.usdc +
+          (liveBalances.sol * solPriceProxy) +
+          (liveBalances.cards * cardsPriceProxy);
 
         const allTimePackPnl = packHist.history.reduce((sum, p) => sum + p.netPnlUsdc, 0);
 
@@ -106,15 +113,21 @@ export function registerAccountTools(
 
         const summary = {
           walletAddress: activeAddress,
+          dataMode: "mixed",
+          collectionSource: "local simulation; not verified against on-chain NFTs",
           totalCardsHeld: userCards.total,
           totalEstimatedCollectionValueUsdc: totalCardValue,
           tokenBalances: {
-            usdc: account.balances.usdc,
-            sol: account.balances.sol,
-            cards: account.balances.cards,
-            totalTokenValueUsdc: Number(totalTokenValue.toFixed(2))
+            usdc: liveBalances.usdc,
+            sol: liveBalances.sol,
+            cards: liveBalances.cards,
+            source: "Solana RPC",
+            estimatedTokenValueUsdc: Number(totalTokenValue.toFixed(2)),
+            valuationSource: "sandbox price proxies; not live market pricing"
           },
-          totalNetWorthUsdc: Number((totalCardValue + totalTokenValue).toFixed(2)),
+          totalNetWorthUsdc: null,
+          sandboxEstimatedNetWorthUsdc: Number((totalCardValue + totalTokenValue).toFixed(2)),
+          valuationNotice: "No net worth is verified: card holdings are local simulation data and token prices use hard-coded proxies.",
           allTimePacksOpened: packHist.totalOpened,
           allTimePackPnlUsdc: allTimePackPnl,
           topCards
@@ -223,12 +236,15 @@ export function registerAccountTools(
   // Tool 5: get_transaction_status
   server.tool(
     "get_transaction_status",
-    "Verify the on-chain confirmation status, slot, and timestamp of any transaction by signature or transaction ID.",
+    "Look up a transaction signature in local session history. This tool does not verify transactions on Solana.",
     {
       signature: z.string().describe("The Solana transaction signature or ID")
     },
     async (args: any) => {
-      const status = accountService.getTransactionStatus(args.signature);
+      const status = {
+        ...accountService.getTransactionStatus(args.signature),
+        source: "local sandbox history; not an on-chain status check"
+      };
       return {
         content: [{ type: "text", text: JSON.stringify(status, null, 2) }]
       };
@@ -238,9 +254,10 @@ export function registerAccountTools(
   // Tool 6: create_agent_wallet
   server.tool(
     "create_agent_wallet",
-    "Generate a new non-custodial Solana wallet instantly for your PayBox agent. Automatically links it to your active session and credits initial sandbox testnet balances so you can immediately buy packs and manage cards.",
+    "Unavailable: server-generated wallet keys are not safe to expose or manage in this service.",
     {},
     async () => {
+      if (!hasLiveSettlement()) return liveSettlementUnavailable("create_agent_wallet");
       try {
         const result = accountService.createAgentWallet();
         return {
@@ -272,7 +289,7 @@ export function registerAccountTools(
   // Tool 7: get_transactions
   server.tool(
     "get_transactions",
-    "List recent transaction history for your account, including pack purchases, card buybacks, swaps, and redemptions with block explorer URLs. Supports pagination.",
+    "List local sandbox transaction records for the connected wallet. These records are not proof of on-chain transactions. Supports pagination.",
     {
       limit: z.number().optional().default(10).describe("Number of transactions to return"),
       offset: z.number().optional().default(0).describe("Pagination offset")
@@ -290,4 +307,3 @@ export function registerAccountTools(
     }
   );
 }
-

@@ -21,87 +21,26 @@ export class AccountService {
 
   constructor(solanaService: SolanaService) {
     this.solanaService = solanaService;
-
-    // Load or initialize default pre-connected wallet session
-    const defaultAddress = "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU";
-    const savedAccount = this.storage.getAccount(defaultAddress);
-    if (savedAccount) {
-      this.activeAccount = { ...savedAccount, isVerifiedOwner: false };
-    } else {
-      this.activeAccount = {
-        walletAddress: defaultAddress,
-        connectedVia: "PayBox MPC Vault",
-        isConnected: true,
-        balances: {
-          sol: 1.85,
-          usdc: 340.50,
-          cards: 12500
-        },
-        spendLimits: {
-          perTransactionCapUsd: 100,
-          dailySpendCapUsd: 500,
-          dailySpentSoFarUsd: 35,
-          requiresPasskeyAboveUsd: 50
-        },
-        isVerifiedOwner: false,
-        createdAt: new Date(Date.now() - 86400000 * 7).toISOString(),
-        lastActive: new Date().toISOString()
-      };
-      this.storage.saveAccount(this.activeAccount);
-    }
-
-    // Load or initialize pack opening history
-    const savedPacks = this.storage.getPackHistory();
-    if (savedPacks && savedPacks.length > 0) {
-      this.packHistory = savedPacks;
-    } else {
-      this.packHistory = [{
-        id: "pack-open-hist-1",
-        packId: "pack-modern-heat",
-        packTitle: "Modern Alt-Art & Special Illustration Pack",
-        openedAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-        paidAmount: 35,
-        paidCurrency: "USDC",
-        isProfit: true,
-        netPnlUsdc: 415,
-        txSignature: "5KtPn8Y4zH1m...mock...tx1",
-        cardPulled: {
-          id: "cc-pkmn-003",
-          name: "Gengar VMAX Alternate Art Secret Rare #271",
-          category: "Pokemon",
-          set: "Fusion Strike",
-          year: 2021,
-          gradingCompany: "BGS",
-          grade: "9.5 Gem Mint",
-          certNumber: "001429910",
-          estimatedValueUsdc: 450,
-          floorPriceUsdc: 420,
-          vaultLocation: "PWCC Vault (Oregon, USA)",
-          nftMint: "GengarVMAXAlt111111111111111111111111111111",
-          imageUrl: "https://collectorcrypt.com/assets/cards/gengar_vmax.jpg",
-          isAvailableForTrade: true,
-          acquiredDate: new Date(Date.now() - 86400000 * 2).toISOString()
-        }
-      }];
-      this.storage.savePackHistory(this.packHistory);
-    }
-
-    // Load or initialize transaction history
-    const savedTxs = this.storage.getTransactionHistory();
-    if (savedTxs && savedTxs.length > 0) {
-      this.transactionHistory = savedTxs;
-    } else {
-      this.transactionHistory = [{
-        signature: "5KtPn8Y4zH1m...mock...tx1",
-        type: "PACK_OPEN",
-        status: "finalized",
-        timestamp: new Date(Date.now() - 86400000 * 2).toISOString(),
-        description: "Opened 1x Modern Alt-Art Pack for 35 USDC (Pulled PSA 9.5 Gengar VMAX)",
-        amountUsd: 35,
-        solanaExplorerUrl: "https://solscan.io/tx/5KtPn8Y4zH1m...mock...tx1"
-      }];
-      this.storage.saveTransactionHistory(this.transactionHistory);
-    }
+    const now = new Date().toISOString();
+    // A new MCP session starts disconnected and empty. Never seed wallet funds
+    // or a sample pack/transaction into a user's portfolio.
+    this.activeAccount = {
+      walletAddress: "",
+      connectedVia: "Default Agent Session",
+      isConnected: false,
+      balances: { sol: 0, usdc: 0, cards: 0 },
+      spendLimits: {
+        perTransactionCapUsd: 100,
+        dailySpendCapUsd: 500,
+        dailySpentSoFarUsd: 0,
+        requiresPasskeyAboveUsd: 50
+      },
+      isVerifiedOwner: false,
+      createdAt: now,
+      lastActive: now
+    };
+    this.packHistory = [];
+    this.transactionHistory = [];
   }
 
   /**
@@ -179,32 +118,29 @@ export class AccountService {
       throw new Error(`Invalid Solana address "${address}". A valid Solana address must be a base58 string 32-44 characters long.`);
     }
 
-    // Check if user already has an existing saved account in persistent storage
+    // Keep wallet-specific safety settings, but never reuse cached or simulated
+    // balances as if they were live chain data.
     const existing = this.storage.getAccount(trimmed);
-    if (existing) {
-      this.activeAccount = {
-        ...existing,
-        isVerifiedOwner,
-        isConnected: true,
-        lastActive: new Date().toISOString()
-      };
-    } else {
-      this.activeAccount = {
-        walletAddress: trimmed,
-        connectedVia: "Solana Native",
-        isConnected: true,
-        isVerifiedOwner,
-        balances: { sol: 0, usdc: 0, cards: 0 },
-        spendLimits: {
-          perTransactionCapUsd: 100,
-          dailySpendCapUsd: 500,
-          dailySpentSoFarUsd: 0,
-          requiresPasskeyAboveUsd: 50
-        },
-        createdAt: new Date().toISOString(),
-        lastActive: new Date().toISOString()
-      };
-    }
+    const now = new Date().toISOString();
+    this.activeAccount = {
+      walletAddress: trimmed,
+      connectedVia: "Solana Native",
+      isConnected: true,
+      isVerifiedOwner,
+      balances: { sol: 0, usdc: 0, cards: 0 },
+      spendLimits: existing?.spendLimits
+        ? { ...existing.spendLimits, dailySpentSoFarUsd: 0 }
+        : {
+            perTransactionCapUsd: 100,
+            dailySpendCapUsd: 500,
+            dailySpentSoFarUsd: 0,
+            requiresPasskeyAboveUsd: 50
+          },
+      createdAt: existing?.createdAt || now,
+      lastActive: now
+    };
+    this.packHistory = this.storage.getPackHistory(trimmed);
+    this.transactionHistory = this.storage.getTransactionHistory(trimmed);
 
     // Query live on-chain balances from Solana RPC
     try {
@@ -213,7 +149,7 @@ export class AccountService {
       this.activeAccount.balances.usdc = live.usdc;
       this.activeAccount.balances.cards = live.cards;
     } catch {
-      // Keep existing balance if network RPC is unavailable
+      // Leave zero balances if the RPC is unavailable; don't show stale values.
     }
 
     this.storage.saveAccount(this.activeAccount);
@@ -258,6 +194,9 @@ export class AccountService {
         throw new Error(`Invalid Solana address provided: "${explicitAddress}". Must be a base58 string 32-44 characters long.`);
       }
       return explicitAddress.trim();
+    }
+    if (!this.activeAccount.isConnected || !this.activeAccount.walletAddress) {
+      throw new Error("No wallet is connected to this session. Connect a Solana wallet first.");
     }
     return this.activeAccount.walletAddress;
   }
@@ -359,18 +298,21 @@ export class AccountService {
       solanaExplorerUrl: `https://solscan.io/tx/${record.txSignature}`
     });
 
-    this.storage.savePackHistory(this.packHistory);
-    this.storage.saveTransactionHistory(this.transactionHistory);
+    this.storage.savePackHistory(this.activeAccount.walletAddress, this.packHistory);
+    this.storage.saveTransactionHistory(this.activeAccount.walletAddress, this.transactionHistory);
     this.storage.saveAccount(this.activeAccount);
   }
 
   /**
    * Get pack history with optional pagination
    */
-  public getPackHistory(limit: number = 10): { totalOpened: number; history: OpenedPackRecord[] } {
+  public getPackHistory(limit: number = 10, address: string = this.activeAccount.walletAddress): { totalOpened: number; history: OpenedPackRecord[] } {
+    const history = address === this.activeAccount.walletAddress
+      ? this.packHistory
+      : this.storage.getPackHistory(address);
     return {
-      totalOpened: this.packHistory.length,
-      history: this.packHistory.slice(0, limit)
+      totalOpened: history.length,
+      history: history.slice(0, limit)
     };
   }
 
@@ -379,7 +321,7 @@ export class AccountService {
    */
   public recordTransaction(tx: TransactionRecord) {
     this.transactionHistory.unshift(tx);
-    this.storage.saveTransactionHistory(this.transactionHistory);
+    this.storage.saveTransactionHistory(this.activeAccount.walletAddress, this.transactionHistory);
   }
 
   /**
@@ -529,4 +471,3 @@ export class AccountService {
     };
   }
 }
-
