@@ -3,13 +3,15 @@ import { CONFIG } from "../config.js";
 export class CollectorCryptApiService {
     baseUrl;
     fetcher;
-    constructor(baseUrl = CONFIG.COLLECTOR_CRYPT_GACHA_API_BASE_URL, fetcher = fetch) {
+    apiKey;
+    constructor(baseUrl = CONFIG.COLLECTOR_CRYPT_GACHA_API_BASE_URL, fetcher = fetch, apiKey = CONFIG.COLLECTOR_CRYPT_GACHA_API_KEY) {
         const parsed = new URL(baseUrl);
         if (parsed.protocol !== "https:" && parsed.hostname !== "localhost") {
             throw new Error("Collector Crypt API URL must use HTTPS.");
         }
         this.baseUrl = parsed;
         this.fetcher = fetcher;
+        this.apiKey = apiKey.trim();
     }
     async getMachines() {
         return this.getJson("/api/machines");
@@ -37,7 +39,10 @@ export class CollectorCryptApiService {
         const url = new URL(path, this.baseUrl);
         let response;
         try {
-            response = await this.fetcher(url, { method: "GET", headers: { accept: "application/json" }, signal: AbortSignal.timeout(10_000) });
+            const headers = { accept: "application/json" };
+            if (this.apiKey)
+                headers["x-api-key"] = this.apiKey;
+            response = await this.fetcher(url, { method: "GET", headers, signal: AbortSignal.timeout(10_000) });
         }
         catch (error) {
             const reason = error instanceof Error ? error.message : "network request failed";
