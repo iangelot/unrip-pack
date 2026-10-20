@@ -83,13 +83,13 @@ export function startHttpServer(port = 3000) {
             scopes_supported: ["wallet:read", "wallet:write", "vault:trade"]
         };
     };
-    app.get(["/.well-known/oauth-authorization-server", "/.well-known/oauth-authorization-server/*"], (req, res) => {
+    app.use("/.well-known/oauth-authorization-server", (req, res) => {
         res.json(getDiscoveryMetadata(req));
     });
-    app.get(["/.well-known/openid-configuration", "/.well-known/openid-configuration/*"], (req, res) => {
+    app.use("/.well-known/openid-configuration", (req, res) => {
         res.json(getDiscoveryMetadata(req));
     });
-    app.get(["/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/*"], (req, res) => {
+    app.use("/.well-known/oauth-protected-resource", (req, res) => {
         const proto = req.headers["x-forwarded-proto"] || "https";
         const host = req.headers.host || "paybox-collectorcrypt-mcp.onrender.com";
         const baseUrl = `${proto}://${host}`;

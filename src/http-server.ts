@@ -116,15 +116,15 @@ export function startHttpServer(port: number = 3000) {
     };
   };
 
-  app.get(["/.well-known/oauth-authorization-server", "/.well-known/oauth-authorization-server/*"], (req: Request, res: Response) => {
+  app.use("/.well-known/oauth-authorization-server", (req: Request, res: Response) => {
     res.json(getDiscoveryMetadata(req));
   });
 
-  app.get(["/.well-known/openid-configuration", "/.well-known/openid-configuration/*"], (req: Request, res: Response) => {
+  app.use("/.well-known/openid-configuration", (req: Request, res: Response) => {
     res.json(getDiscoveryMetadata(req));
   });
 
-  app.get(["/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/*"], (req: Request, res: Response) => {
+  app.use("/.well-known/oauth-protected-resource", (req: Request, res: Response) => {
     const proto = req.headers["x-forwarded-proto"] || "https";
     const host = req.headers.host || "paybox-collectorcrypt-mcp.onrender.com";
     const baseUrl = `${proto}://${host}`;
