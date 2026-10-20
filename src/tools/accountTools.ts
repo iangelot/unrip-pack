@@ -80,57 +80,36 @@ export function registerAccountTools(
   // Tool 3: get_portfolio_summary
   server.tool(
     "get_portfolio_summary",
-    "Retrieve live Solana token balances and local sandbox collection/history data. Card holdings and pack history are not verified on-chain.",
+    "Retrieve token balances from Solana RPC. Local sandbox cards, estimated card values, and simulated pack PnL are excluded because they are not verified wallet assets.",
     {
       userAddress: z.string().optional().describe("Optional explicit Solana address. Defaults to your connected session wallet.")
     },
     async (args: any) => {
       try {
         const activeAddress = accountService.getActiveAddress(args.userAddress);
-        const userCards = ccService.getUserVaultCards(activeAddress, 100);
         const liveBalances = await solanaService.getBalances(activeAddress);
-        const packHist = accountService.getPackHistory(100, activeAddress);
-
-        const totalCardValue = userCards.cards.reduce((sum, c) => sum + c.estimatedValueUsdc, 0);
-        const solPriceProxy = 185.0;
-        const cardsPriceProxy = 0.0205;
-        const totalTokenValue = 
-          liveBalances.usdc +
-          (liveBalances.sol * solPriceProxy) +
-          (liveBalances.cards * cardsPriceProxy);
-
-        const allTimePackPnl = packHist.history.reduce((sum, p) => sum + p.netPnlUsdc, 0);
-
-        const topCards = [...userCards.cards]
-          .sort((a, b) => b.estimatedValueUsdc - a.estimatedValueUsdc)
-          .slice(0, 3)
-          .map(c => ({
-            name: c.name,
-            grade: c.grade,
-            valueUsdc: c.estimatedValueUsdc,
-            certNumber: c.certNumber
-          }));
 
         const summary = {
           walletAddress: activeAddress,
-          dataMode: "mixed",
-          collectionSource: "local simulation; not verified against on-chain NFTs",
-          totalCardsHeld: userCards.total,
-          totalEstimatedCollectionValueUsdc: totalCardValue,
+          dataMode: "live_onchain_balances_only",
           tokenBalances: {
             usdc: liveBalances.usdc,
             sol: liveBalances.sol,
             cards: liveBalances.cards,
             source: "Solana RPC",
-            estimatedTokenValueUsdc: Number(totalTokenValue.toFixed(2)),
-            valuationSource: "sandbox price proxies; not live market pricing"
           },
+          verifiedUsdValue: null,
           totalNetWorthUsdc: null,
-          sandboxEstimatedNetWorthUsdc: Number((totalCardValue + totalTokenValue).toFixed(2)),
-          valuationNotice: "No net worth is verified: card holdings are local simulation data and token prices use hard-coded proxies.",
-          allTimePacksOpened: packHist.totalOpened,
-          allTimePackPnlUsdc: allTimePackPnl,
-          topCards
+          cardCollection: {
+            status: "unavailable",
+            verified: false,
+            reason: "This server does not yet verify Collector Crypt card NFT ownership and valuation against the connected wallet. Local sandbox card examples are excluded."
+          },
+          packHistory: {
+            status: "sandbox_only",
+            includedInPortfolio: false,
+            reason: "Local simulated pack openings and PnL are not on-chain records and are excluded."
+          }
         };
 
         return {
@@ -236,18 +215,36 @@ export function registerAccountTools(
   // Tool 5: get_transaction_status
   server.tool(
     "get_transaction_status",
-    "Look up a transaction signature in local session history. This tool does not verify transactions on Solana.",
+    "Check a Solana transaction signature against the mainnet RPC. Local history is returned only as a separate, non-authoritative note.",
     {
       signature: z.string().describe("The Solana transaction signature or ID")
     },
     async (args: any) => {
-      const status = {
-        ...accountService.getTransactionStatus(args.signature),
-        source: "local sandbox history; not an on-chain status check"
-      };
-      return {
-        content: [{ type: "text", text: JSON.stringify(status, null, 2) }]
-      };
+      if (!/^[1-9A-HJ-NP-Za-km-z]{64,90}$/.test(args.signature)) {
+        return {
+          content: [{ type: "text", text: "Invalid Solana transaction signature. Provide the full base58 transaction signature, not a sandbox ID or truncated value." }],
+          isError: true
+        };
+      }
+      try {
+        const onChain = await solanaService.getOnChainSignatureStatus(args.signature);
+        const localRecord = accountService.getTransactionStatus(args.signature);
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              ...onChain,
+              localHistoryRecord: localRecord.status === "not_found" ? null : localRecord,
+              note: onChain.status === "not_found"
+                ? "Solana RPC did not find this signature in transaction history. Check the full signature and the correct cluster; a local record cannot prove that a transaction happened."
+                : "Status was checked against Solana RPC."
+            }, null, 2)
+          }]
+        };
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        return { content: [{ type: "text", text: `Solana RPC signature lookup failed: ${message}` }], isError: true };
+      }
     }
   );
 
@@ -307,3 +304,4 @@ export function registerAccountTools(
     }
   );
 }
+
