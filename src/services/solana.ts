@@ -7,7 +7,9 @@ import {
 } from "@solana/web3.js";
 import {
   getAssociatedTokenAddressSync,
-  createTransferInstruction
+  createTransferInstruction,
+  TOKEN_PROGRAM_ID,
+  TOKEN_2022_PROGRAM_ID
 } from "@solana/spl-token";
 import { CONFIG } from "../config.js";
 
@@ -20,6 +22,76 @@ export class SolanaService {
 
   public getConnection(): Connection {
     return this.connection;
+  }
+
+  /**
+   * Return standard token NFTs whose token accounts are currently owned by
+   * this address. Both the wallet token account and mint supply/decimals are
+   * checked on Solana RPC; metadata names are not fetched from off-chain URLs.
+   */
+  public async getOwnedNftMints(ownerAddress: string): Promise<{
+    owner: string;
+    source: "Solana RPC";
+    coverage: "standard_token_nfts_only";
+    compressedNftsIncluded: false;
+    nfts: Array<{ mint: string; tokenAccount: string; tokenProgram: string }>;
+  }> {
+    const owner = new PublicKey(ownerAddress);
+    const results = await Promise.allSettled([
+      this.connection.getParsedTokenAccountsByOwner(owner, { programId: TOKEN_PROGRAM_ID }),
+      this.connection.getParsedTokenAccountsByOwner(owner, { programId: TOKEN_2022_PROGRAM_ID })
+    ]);
+    const failed = results.filter((result) => result.status === "rejected");
+    if (failed.length === results.length) {
+      const reason = failed[0]?.status === "rejected" ? failed[0].reason : "RPC request failed";
+      throw new Error(`Unable to query wallet NFT token accounts: ${reason instanceof Error ? reason.message : String(reason)}`);
+    }
+
+    const programs = [TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID];
+    const candidates = new Map<string, { mint: string; tokenAccount: string; tokenProgram: string; program: PublicKey }>();
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
+      if (result.status !== "fulfilled") continue;
+      for (const entry of result.value.value) {
+        const parsed = entry.account.data as any;
+        const info = parsed?.parsed?.info;
+        const tokenAmount = info?.tokenAmount;
+        if (tokenAmount?.decimals !== 0 || tokenAmount?.amount !== "1" || !info?.mint) continue;
+        const mint = new PublicKey(info.mint);
+        candidates.set(mint.toBase58(), {
+          mint: mint.toBase58(),
+          tokenAccount: entry.pubkey.toBase58(),
+          tokenProgram: programs[i].toBase58(),
+          program: programs[i]
+        });
+      }
+    }
+
+    const candidateList = [...candidates.values()];
+    const nfts: Array<{ mint: string; tokenAccount: string; tokenProgram: string }> = [];
+    for (let start = 0; start < candidateList.length; start += 100) {
+      const batch = candidateList.slice(start, start + 100);
+      const mintAccounts = await this.connection.getMultipleAccountsInfo(batch.map((item) => new PublicKey(item.mint)));
+      for (let i = 0; i < batch.length; i++) {
+        const item = batch[i];
+        const account = mintAccounts[i];
+        const data = account?.data;
+        if (!account || !data || account.owner.toBase58() !== item.tokenProgram || data.length < 82) continue;
+        const mintAuthorityOption = data.readUInt32LE(0);
+        const supply = data.readBigUInt64LE(36);
+        const decimals = data.readUInt8(44);
+        if (supply !== 1n || decimals !== 0 || mintAuthorityOption !== 0) continue;
+        nfts.push({ mint: item.mint, tokenAccount: item.tokenAccount, tokenProgram: item.tokenProgram });
+      }
+    }
+
+    return {
+      owner: owner.toBase58(),
+      source: "Solana RPC",
+      coverage: "standard_token_nfts_only",
+      compressedNftsIncluded: false,
+      nfts
+    };
   }
 
   /** Check a transaction signature against Solana RPC, independent of local history. */
@@ -168,3 +240,4 @@ export class SolanaService {
     };
   }
 }
+
