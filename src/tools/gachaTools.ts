@@ -131,9 +131,9 @@ export function registerGachaTools(
         const walletAddress = verifiedSessionAddress(accountService, args.userAddress);
         const machines = await collectorCryptApi.getMachines() as any;
         const machineRows = Array.isArray(machines?.machines) ? machines.machines : [];
-        const machine = machineRows.find((item: any) => item?.code === args.packType);
+        const machine = machineRows.find((item: any) => item?.code === args.packType && item?.public === true);
         const price = Number(machine?.price);
-        if (!machine || !Number.isFinite(price) || price <= 0) throw new Error(`Live Gacha machine ${args.packType} or its price is unavailable.`);
+        if (!machine || !Number.isFinite(price) || price <= 0) throw new Error(`Public live Gacha machine ${args.packType} or its price is unavailable.`);
         if (Math.abs(price - args.expectedPriceUsdc) > 0.000001) {
           throw new Error(`Price changed: ${args.packType} currently costs ${price} USDC. Confirm that price and try again.`);
         }
@@ -185,10 +185,10 @@ export function registerGachaTools(
         const sender = verifiedSessionAddress(accountService, args.userAddress);
         if (!accountService.validateSolanaAddress(args.receiverAddress)) throw new Error("Invalid gift recipient Solana address.");
         const machines = await collectorCryptApi.getMachines() as any;
-        const machine = (Array.isArray(machines?.machines) ? machines.machines : []).find((item: any) => item?.code === args.packType);
+        const machine = (Array.isArray(machines?.machines) ? machines.machines : []).find((item: any) => item?.code === args.packType && item?.public === true);
         const unitPrice = Number(machine?.price);
         const expected = unitPrice * args.count;
-        if (!Number.isFinite(expected) || Math.abs(expected - args.expectedTotalUsdc) > 0.000001) throw new Error("The live machine price or gift total does not match the amount the user confirmed.");
+        if (!machine || !Number.isFinite(expected) || Math.abs(expected - args.expectedTotalUsdc) > 0.000001) throw new Error("The public live machine price or gift total does not match the amount the user confirmed.");
         const balance = await solanaService.getBalances(sender);
         if (balance.usdc < expected) throw new Error(`Insufficient live USDC balance: need ${expected}, have ${balance.usdc}.`);
         const spendLimit = accountService.verifySpendLimits(expected);
@@ -344,8 +344,9 @@ export function registerGachaTools(
     {},
     async () => {
       try {
-        const machines = await collectorCryptApi.getMachines();
-        return { content: [{ type: "text", text: JSON.stringify({ dataSource: "Collector Crypt Gacha API", dataMode: "live_api", machines }, null, 2) }] };
+        const response = await collectorCryptApi.getMachines() as any;
+        const machines = Array.isArray(response?.machines) ? response.machines.filter((machine: any) => machine?.public === true) : [];
+        return { content: [{ type: "text", text: JSON.stringify({ dataSource: "Collector Crypt Gacha API", dataMode: "live_api", publicMachinesOnly: true, machines }, null, 2) }] };
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         return { content: [{ type: "text", text: `Unable to fetch live Collector Crypt machines: ${message}` }], isError: true };
