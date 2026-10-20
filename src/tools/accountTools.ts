@@ -215,7 +215,7 @@ export function registerAccountTools(
   // Tool 5: get_transaction_status
   server.tool(
     "get_transaction_status",
-    "Check a Solana transaction signature against the mainnet RPC. Local history is returned only as a separate, non-authoritative note.",
+    "Check a Solana transaction signature against the configured Solana RPC. Local history is returned only as a separate, non-authoritative note.",
     {
       signature: z.string().describe("The Solana transaction signature or ID")
     },
