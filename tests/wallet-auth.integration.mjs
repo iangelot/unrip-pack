@@ -78,6 +78,8 @@ try {
   assert.equal(querySandboxBypass.status, 401, "the public sandbox query must not bypass authentication");
   const headerSandboxBypass = await fetch(`${baseUrl}/mcp`, { headers: { "x-sandbox-bypass": "true" } });
   assert.equal(headerSandboxBypass.status, 401, "the public sandbox header must not bypass authentication");
+  const unauthenticatedSse = await fetch(`${baseUrl}/sse`);
+  assert.equal(unauthenticatedSse.status, 401, "legacy SSE must require a wallet bearer token");
 
   const boundPage = await (await fetch(`${baseUrl}/oauth/authorize`)).text();
   const boundMatch = boundPage.match(/id="challengeText" name="challenge" value="([^"]+)"/);
