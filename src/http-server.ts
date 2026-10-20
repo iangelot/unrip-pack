@@ -261,20 +261,7 @@ export function startHttpServer(port: number = 3000) {
               <button type="button" class="btn-action" onclick="connectAndSignBrowserWallet()">Sign with Browser Wallet</button>
             </div>
 
-            <!-- Option 2: Link Real Solana Address Directly (Full Access) -->
-            <div class="option-card" id="cardManualOwner">
-              <div class="option-title">
-                <span>🔑 Link Real Solana Address</span>
-                <span class="badge-pill badge-verified">FULL TRADING ACCESS</span>
-              </div>
-              <div class="option-desc">Paste your real Solana wallet address directly to immediately link your cards, balances, and permissions without needing extension popups.</div>
-              <div class="input-group">
-                <input type="text" id="manualOwnerAddress" placeholder="Paste your Solana address (e.g. 7xKXtg...)" value="">
-                <button type="button" class="btn-action" style="margin-top: 0.6rem;" onclick="submitManualOwner()">Link Real Wallet (Full Access)</button>
-              </div>
-            </div>
-
-            <!-- Option 3: Instant Non-Custodial Agent Wallet -->
+            <!-- Option 2: Instant Non-Custodial Agent Wallet -->
             <div class="option-card" id="cardInstant">
               <div class="option-title">
                 <span>⚡ Instant Non-Custodial Wallet</span>
@@ -284,7 +271,7 @@ export function startHttpServer(port: number = 3000) {
               <button type="button" class="btn-action btn-secondary" onclick="useInstantWallet()">Generate Instant Agent Wallet</button>
             </div>
 
-            <!-- Option 4: Read-Only Spectator Mode -->
+            <!-- Option 3: Read-Only Spectator Mode -->
             <div class="option-card" id="cardSpectator">
               <div class="option-title">
                 <span>👁️ Read-Only Spectator Mode</span>
@@ -330,7 +317,7 @@ export function startHttpServer(port: number = 3000) {
             showStatus('Detecting wallet extension in this browser tab...');
             const provider = await getProvider();
             if (!provider) {
-              showStatus('⚠️ Wallet extension not detected in this browser tab. You can use Option 2 ("Link Real Solana Address") below to link your real wallet directly with full access!', true);
+              showStatus('⚠️ Wallet extension not detected in this browser tab. Please ensure Phantom or Solflare is unlocked and active in this browser.', true);
               return;
             }
 
@@ -366,20 +353,6 @@ export function startHttpServer(port: number = 3000) {
             } catch (err) {
               showStatus('Authentication failed: ' + (err.message || err), true);
             }
-          }
-
-          function submitManualOwner() {
-            const addr = document.getElementById('manualOwnerAddress').value.trim();
-            if (!addr) {
-              showStatus('Please enter your Solana wallet address.', true);
-              return;
-            }
-            document.getElementById('selectedAddress').value = addr;
-            document.getElementById('authMode').value = 'manual_owner';
-            showStatus('✅ Linking real wallet with Full Trading Access...');
-            setTimeout(() => {
-              document.getElementById('authForm').submit();
-            }, 300);
           }
 
           function useInstantWallet() {
@@ -456,12 +429,6 @@ export function startHttpServer(port: number = 3000) {
         res.status(400).send(`Signature verification error: ${err instanceof Error ? err.message : String(err)}`);
         return;
       }
-    } else if (auth_mode === "manual_owner") {
-      if (!finalAddress || !sharedAccountService.validateSolanaAddress(finalAddress)) {
-        res.status(400).send(`Invalid Solana address format: ${finalAddress}. Must be a valid 32-44 character base58 public key.`);
-        return;
-      }
-      isVerifiedOwner = true;
     } else {
       // Spectator mode
       if (!finalAddress) {
