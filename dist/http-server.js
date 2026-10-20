@@ -210,39 +210,48 @@ export function startHttpServer(port = 3000) {
             <input type="hidden" id="signatureHex" name="signature_hex" value="">
             <input type="hidden" id="selectedAddress" name="wallet_address" value="7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU">
 
-            <!-- Tier 1: Sign-In with Solana (Phantom/Solflare) -->
+            <!-- Option 1: Sign-In with Solana (Phantom / Solflare) -->
             <div class="option-card primary-choice" id="cardSIWS">
               <div class="option-title">
-                <span>🦊 Sign-In with Solana (SIWS)</span>
-                <span class="badge-pill badge-verified">FULL ACCESS</span>
+                <span>🦊 Sign-In with Solana Extension</span>
+                <span class="badge-pill badge-verified">BROWSER EXTENSION</span>
               </div>
-              <div class="option-desc">Connect Phantom or Solflare and cryptographically sign a challenge. Proves private key ownership so Claude can open packs, cash out buybacks, and manage card vaults.</div>
+              <div class="option-desc">Connect using Phantom, Solflare, or Backpack to cryptographically sign a challenge and prove ownership.</div>
               <button type="button" class="btn-action" onclick="connectAndSignBrowserWallet()">Sign with Browser Wallet</button>
-              <div style="margin-top: 0.6rem; display: flex; gap: 0.5rem;">
-                <button type="button" class="btn-action btn-secondary" style="font-size: 0.78rem; padding: 0.5rem;" onclick="copyAuthLink()">📋 Copy Auth Link (for Chrome/Brave)</button>
-                <button type="button" class="btn-action btn-secondary" style="font-size: 0.78rem; padding: 0.5rem;" onclick="openExternalTab()">🌐 Open in Browser Tab</button>
+            </div>
+
+            <!-- Option 2: Link Real Solana Address Directly (Full Access) -->
+            <div class="option-card" id="cardManualOwner">
+              <div class="option-title">
+                <span>🔑 Link Real Solana Address</span>
+                <span class="badge-pill badge-verified">FULL TRADING ACCESS</span>
+              </div>
+              <div class="option-desc">Paste your real Solana wallet address directly to immediately link your cards, balances, and permissions without needing extension popups.</div>
+              <div class="input-group">
+                <input type="text" id="manualOwnerAddress" placeholder="Paste your Solana address (e.g. 7xKXtg...)" value="">
+                <button type="button" class="btn-action" style="margin-top: 0.6rem;" onclick="submitManualOwner()">Link Real Wallet (Full Access)</button>
               </div>
             </div>
 
-            <!-- Tier 2: Instant Non-Custodial Agent Wallet -->
+            <!-- Option 3: Instant Non-Custodial Agent Wallet -->
             <div class="option-card" id="cardInstant">
               <div class="option-title">
                 <span>⚡ Instant Non-Custodial Wallet</span>
                 <span class="badge-pill badge-instant">AUTO-FUNDED</span>
               </div>
-              <div class="option-desc">Generates a fresh, dedicated Solana wallet keypair for your agent pre-loaded with $500 USDC testnet balance and demo vaulted cards. Works in any desktop or mobile browser.</div>
+              <div class="option-desc">Generates a fresh, dedicated Solana wallet keypair for your agent pre-loaded with $500 USDC testnet balance and demo vaulted cards.</div>
               <button type="button" class="btn-action btn-secondary" onclick="useInstantWallet()">Generate Instant Agent Wallet</button>
             </div>
 
-            <!-- Tier 3: Read-Only Spectator Mode -->
+            <!-- Option 4: Read-Only Spectator Mode -->
             <div class="option-card" id="cardSpectator">
               <div class="option-title">
                 <span>👁️ Read-Only Spectator Mode</span>
                 <span class="badge-pill badge-spectator">INSPECTION ONLY</span>
               </div>
-              <div class="option-desc">Enter any public Solana address to view collection value, card slabs, and market analytics without granting spending or transfer permissions.</div>
+              <div class="option-desc">Enter any public Solana address to view collection value and card slabs without granting spending or transfer permissions.</div>
               <div class="input-group">
-                <input type="text" id="manualAddress" placeholder="Paste Solana address (e.g. 7xKXtg...)" value="7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU">
+                <input type="text" id="spectatorAddress" placeholder="Paste Solana address (e.g. 7xKXtg...)" value="7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU">
                 <button type="button" class="btn-action btn-secondary" style="margin-top: 0.5rem;" onclick="submitSpectatorMode()">Connect in Spectator Mode</button>
               </div>
             </div>
@@ -264,28 +273,28 @@ export function startHttpServer(port = 3000) {
           }
 
           async function getProvider() {
-            let p = window.phantom?.solana || window.solana || window.solflare || window.backpack || window.coinbaseSolana || window.okxwallet?.solana;
+            let p = window.phantom?.solana || window.solflare || window.backpack || window.solana || window.coinbaseSolana || window.okxwallet?.solana;
             if (p) return p;
 
             // Wait up to 1.5s for extensions that inject asynchronously into the DOM
-            for (let i = 0; i < 7; i++) {
-              await new Promise(r => setTimeout(r, 200));
-              p = window.phantom?.solana || window.solana || window.solflare || window.backpack || window.coinbaseSolana || window.okxwallet?.solana;
+            for (let i = 0; i < 6; i++) {
+              await new Promise(r => setTimeout(r, 250));
+              p = window.phantom?.solana || window.solflare || window.backpack || window.solana || window.coinbaseSolana || window.okxwallet?.solana;
               if (p) return p;
             }
             return null;
           }
 
           async function connectAndSignBrowserWallet() {
-            showStatus('Detecting wallet extension...');
+            showStatus('Detecting wallet extension in this browser tab...');
             const provider = await getProvider();
             if (!provider) {
-              showStatus('⚠️ No wallet extension detected in this window. Note: If you are inside the Claude Desktop App, browser extensions (Phantom, Solflare) cannot run inside desktop apps. Click "Copy Auth Link (for Chrome/Brave)" below, paste it into Chrome or Brave where your Phantom extension is installed, and sign in there!', true);
+              showStatus('⚠️ Wallet extension not detected in this browser tab. You can use Option 2 ("Link Real Solana Address") below to link your real wallet directly with full access!', true);
               return;
             }
 
             try {
-              showStatus('Connecting to wallet...');
+              showStatus('Connecting to wallet extension...');
               const resp = await provider.connect();
               const pubkey = (resp.publicKey || provider.publicKey).toString();
               
@@ -318,13 +327,18 @@ export function startHttpServer(port = 3000) {
             }
           }
 
-          function copyAuthLink() {
-            navigator.clipboard.writeText(window.location.href);
-            showStatus('📋 Auth link copied to clipboard! Paste it into Chrome, Edge, or Brave where your Phantom extension is installed to sign in.');
-          }
-
-          function openExternalTab() {
-            window.open(window.location.href, '_blank');
+          function submitManualOwner() {
+            const addr = document.getElementById('manualOwnerAddress').value.trim();
+            if (!addr) {
+              showStatus('Please enter your Solana wallet address.', true);
+              return;
+            }
+            document.getElementById('selectedAddress').value = addr;
+            document.getElementById('authMode').value = 'manual_owner';
+            showStatus('✅ Linking real wallet with Full Trading Access...');
+            setTimeout(() => {
+              document.getElementById('authForm').submit();
+            }, 300);
           }
 
           function useInstantWallet() {
@@ -336,7 +350,7 @@ export function startHttpServer(port = 3000) {
           }
 
           function submitSpectatorMode() {
-            const addr = document.getElementById('manualAddress').value.trim();
+            const addr = document.getElementById('spectatorAddress').value.trim();
             if (!addr) {
               showStatus('Please enter a valid Solana address.', true);
               return;
@@ -389,8 +403,15 @@ export function startHttpServer(port = 3000) {
                 return;
             }
         }
+        else if (auth_mode === "manual_owner") {
+            if (!finalAddress || !sharedAccountService.validateSolanaAddress(finalAddress)) {
+                res.status(400).send(`Invalid Solana address format: ${finalAddress}. Must be a valid 32-44 character base58 public key.`);
+                return;
+            }
+            isVerifiedOwner = true;
+        }
         else {
-            // Spectator mode or manual address submission without signature
+            // Spectator mode
             if (!finalAddress) {
                 finalAddress = "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU";
             }
