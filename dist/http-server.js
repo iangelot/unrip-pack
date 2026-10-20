@@ -218,6 +218,10 @@ export function startHttpServer(port = 3000) {
               </div>
               <div class="option-desc">Connect Phantom or Solflare and cryptographically sign a challenge. Proves private key ownership so Claude can open packs, cash out buybacks, and manage card vaults.</div>
               <button type="button" class="btn-action" onclick="connectAndSignBrowserWallet()">Sign with Browser Wallet</button>
+              <div style="margin-top: 0.6rem; display: flex; gap: 0.5rem;">
+                <button type="button" class="btn-action btn-secondary" style="font-size: 0.78rem; padding: 0.5rem;" onclick="copyAuthLink()">📋 Copy Auth Link (for Chrome/Brave)</button>
+                <button type="button" class="btn-action btn-secondary" style="font-size: 0.78rem; padding: 0.5rem;" onclick="openExternalTab()">🌐 Open in Browser Tab</button>
+              </div>
             </div>
 
             <!-- Tier 2: Instant Non-Custodial Agent Wallet -->
@@ -226,7 +230,7 @@ export function startHttpServer(port = 3000) {
                 <span>⚡ Instant Non-Custodial Wallet</span>
                 <span class="badge-pill badge-instant">AUTO-FUNDED</span>
               </div>
-              <div class="option-desc">Generates a fresh, dedicated Solana wallet keypair for your agent pre-loaded with $500 USDC testnet balance and demo vaulted cards.</div>
+              <div class="option-desc">Generates a fresh, dedicated Solana wallet keypair for your agent pre-loaded with $500 USDC testnet balance and demo vaulted cards. Works in any desktop or mobile browser.</div>
               <button type="button" class="btn-action btn-secondary" onclick="useInstantWallet()">Generate Instant Agent Wallet</button>
             </div>
 
@@ -259,10 +263,24 @@ export function startHttpServer(port = 3000) {
             box.innerText = text;
           }
 
+          async function getProvider() {
+            let p = window.phantom?.solana || window.solana || window.solflare || window.backpack || window.coinbaseSolana || window.okxwallet?.solana;
+            if (p) return p;
+
+            // Wait up to 1.5s for extensions that inject asynchronously into the DOM
+            for (let i = 0; i < 7; i++) {
+              await new Promise(r => setTimeout(r, 200));
+              p = window.phantom?.solana || window.solana || window.solflare || window.backpack || window.coinbaseSolana || window.okxwallet?.solana;
+              if (p) return p;
+            }
+            return null;
+          }
+
           async function connectAndSignBrowserWallet() {
-            const provider = window.phantom?.solana || window.solana || window.solflare;
+            showStatus('Detecting wallet extension...');
+            const provider = await getProvider();
             if (!provider) {
-              showStatus('Phantom or Solflare wallet extension not detected in this browser. Please install Phantom or choose the Instant Agent Wallet.', true);
+              showStatus('⚠️ No wallet extension detected in this window. Note: If you are inside the Claude Desktop App, browser extensions (Phantom, Solflare) cannot run inside desktop apps. Click "Copy Auth Link (for Chrome/Brave)" below, paste it into Chrome or Brave where your Phantom extension is installed, and sign in there!', true);
               return;
             }
 
@@ -298,6 +316,15 @@ export function startHttpServer(port = 3000) {
             } catch (err) {
               showStatus('Authentication failed: ' + (err.message || err), true);
             }
+          }
+
+          function copyAuthLink() {
+            navigator.clipboard.writeText(window.location.href);
+            showStatus('📋 Auth link copied to clipboard! Paste it into Chrome, Edge, or Brave where your Phantom extension is installed to sign in.');
+          }
+
+          function openExternalTab() {
+            window.open(window.location.href, '_blank');
           }
 
           function useInstantWallet() {
