@@ -6,10 +6,12 @@ type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
 export class CollectorCryptApiService {
   private readonly baseUrl: URL;
   private readonly fetcher: FetchLike;
+  private readonly apiKey: string;
 
   constructor(
     baseUrl = CONFIG.COLLECTOR_CRYPT_GACHA_API_BASE_URL,
-    fetcher: FetchLike = fetch
+    fetcher: FetchLike = fetch,
+    apiKey = CONFIG.COLLECTOR_CRYPT_GACHA_API_KEY
   ) {
     const parsed = new URL(baseUrl);
     if (parsed.protocol !== "https:" && parsed.hostname !== "localhost") {
@@ -17,6 +19,7 @@ export class CollectorCryptApiService {
     }
     this.baseUrl = parsed;
     this.fetcher = fetcher;
+    this.apiKey = apiKey.trim();
   }
 
   async getMachines(): Promise<unknown> {
@@ -48,7 +51,9 @@ export class CollectorCryptApiService {
     const url = new URL(path, this.baseUrl);
     let response: Response;
     try {
-      response = await this.fetcher(url, { method: "GET", headers: { accept: "application/json" }, signal: AbortSignal.timeout(10_000) });
+      const headers: Record<string, string> = { accept: "application/json" };
+      if (this.apiKey) headers["x-api-key"] = this.apiKey;
+      response = await this.fetcher(url, { method: "GET", headers, signal: AbortSignal.timeout(10_000) });
     } catch (error) {
       const reason = error instanceof Error ? error.message : "network request failed";
       throw new Error(`Collector Crypt API request failed: ${reason}`);
