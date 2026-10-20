@@ -63,6 +63,13 @@ const failedService = new SolanaService({
   async getParsedTokenAccountsByOwner() { throw new Error("RPC unavailable"); }
 });
 await assert.rejects(failedService.getOwnedNftMints(owner.toBase58()), /RPC unavailable/);
+const partialService = new SolanaService({
+  async getParsedTokenAccountsByOwner(_owner, filter) {
+    if (filter.programId.equals(TOKEN_PROGRAM_ID)) return { value: [] };
+    throw new Error("Token-2022 RPC unavailable");
+  }
+});
+await assert.rejects(partialService.getOwnedNftMints(owner.toBase58()), /Token-2022 RPC unavailable/);
 await assert.rejects(new SolanaService(connection).getOwnedNftMints("not-a-solana-address"));
 
 console.log("NFT inventory integration checks passed.");
