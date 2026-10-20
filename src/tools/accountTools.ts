@@ -80,7 +80,7 @@ export function registerAccountTools(
   // Tool 3: get_portfolio_summary
   server.tool(
     "get_portfolio_summary",
-    "Retrieve token balances from Solana RPC. Local sandbox cards, estimated card values, and simulated pack PnL are excluded because they are not verified wallet assets.",
+    "Retrieve Solana RPC token balances and standard NFT mints currently held by a wallet. Compressed NFTs are not included; local sandbox cards and estimated card values are excluded.",
     {
       userAddress: z.string().optional().describe("Optional explicit Solana address. Defaults to your connected session wallet.")
     },
@@ -88,10 +88,20 @@ export function registerAccountTools(
       try {
         const activeAddress = accountService.getActiveAddress(args.userAddress);
         const liveBalances = await solanaService.getBalances(activeAddress);
+        let nftInventory: unknown;
+        try {
+          nftInventory = await solanaService.getOwnedNftMints(activeAddress);
+        } catch (error) {
+          nftInventory = {
+            status: "temporarily_unavailable",
+            source: "Solana RPC",
+            reason: error instanceof Error ? error.message : String(error)
+          };
+        }
 
         const summary = {
           walletAddress: activeAddress,
-          dataMode: "live_onchain_balances_only",
+          dataMode: "live_onchain_balances_and_standard_nft_mints",
           tokenBalances: {
             usdc: liveBalances.usdc,
             sol: liveBalances.sol,
@@ -100,6 +110,7 @@ export function registerAccountTools(
           },
           verifiedUsdValue: null,
           totalNetWorthUsdc: null,
+          nftInventory,
           cardCollection: {
             status: "unavailable",
             verified: false,
@@ -121,6 +132,24 @@ export function registerAccountTools(
           content: [{ type: "text", text: `Error: ${msg}` }],
           isError: true
         };
+      }
+    }
+  );
+
+  server.tool(
+    "get_wallet_nft_inventory",
+    "List standard Solana NFTs currently held by a wallet by checking Token and Token-2022 ownership plus mint supply of one and zero decimals on-chain. Compressed NFTs are not included, and this does not assign collectible identity or value.",
+    {
+      userAddress: z.string().optional().describe("Optional Solana wallet address. Defaults to the connected session wallet.")
+    },
+    async (args: any) => {
+      try {
+        const address = accountService.getActiveAddress(args.userAddress);
+        const inventory = await solanaService.getOwnedNftMints(address);
+        return { content: [{ type: "text", text: JSON.stringify(inventory, null, 2) }] };
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { content: [{ type: "text", text: `Unable to fetch verified NFT inventory: ${msg}` }], isError: true };
       }
     }
   );
@@ -304,4 +333,5 @@ export function registerAccountTools(
     }
   );
 }
+
 
