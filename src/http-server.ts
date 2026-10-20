@@ -769,7 +769,7 @@ MCP Server URL: ${baseUrl}/mcp
   // Backward compatibility: /sse and /messages (Legacy SSE clients)
   // =========================================================================
   app.get("/sse", async (req: Request, res: Response) => {
-    const bearerToken = req.headers.authorization?.replace(/^Bearer\\s+/i, "");
+    const bearerToken = req.headers.authorization?.replace(/^Bearer\s+/i, "");
     const tokenData = bearerToken ? oauthTokensToWallet.get(bearerToken) : undefined;
     if (!bearerToken || !tokenData || tokenData.expiresAt <= Date.now()) {
       if (tokenData && bearerToken) oauthTokensToWallet.delete(bearerToken);
@@ -798,7 +798,7 @@ MCP Server URL: ${baseUrl}/mcp
   app.post("/messages", async (req: Request, res: Response) => {
     const sessionId = req.query.sessionId as string;
     const transport = sseTransports[sessionId];
-    const bearerToken = req.headers.authorization?.replace(/^Bearer\\s+/i, "");
+    const bearerToken = req.headers.authorization?.replace(/^Bearer\s+/i, "");
     const expectedToken = sseTokenBySession[sessionId];
     const tokenData = bearerToken ? oauthTokensToWallet.get(bearerToken) : undefined;
 
