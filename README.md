@@ -8,7 +8,7 @@ This MCP exposes live Collector Crypt Gacha reads and user-authorized mainnet pa
 | --- | --- |
 | Phantom wallet identity link | Signs a one-time off-chain challenge; it does not send a Solana transaction. This is a direct browser-wallet flow, not PayBox wallet authorization. |
 | SOL / SPL balances | Read from Solana RPC for the selected public address. |
-| Standard NFT inventory | Lists Token and Token-2022 mints with wallet balance 1, mint supply 1, zero decimals, and revoked mint authority, verified from Solana RPC. Compressed NFTs are not included; collectible identity and value are not inferred. |
+| Standard NFT inventory | Lists Token and Token-2022 mints with wallet balance 1, mint supply 1, zero decimals, and revoked mint authority, verified from Solana RPC. Includes on-chain Metaplex name/symbol/URI when present. Compressed NFTs are not included; collectible value is not inferred. |
 | Portfolio summary | Shows RPC token balances only. It does not add sandbox cards, guessed prices, or simulated pack PnL to net worth. |
 | Transaction status | Looks up a full base58 signature on the configured Solana RPC; local records are clearly separate and cannot prove settlement. |
 | Gacha machines and recent winners | Read from Collector Crypt's public Gacha API. These are platform API records, not independently verified by this server. |
@@ -18,7 +18,7 @@ This MCP exposes live Collector Crypt Gacha reads and user-authorized mainnet pa
 | Pack opening and gift claims | Uses Collector Crypt's official memo/challenge APIs; the recipient signs a one-time off-chain claim message. |
 | Marketplace, swaps, loans, card transfers, and physical redemption | Not implemented as live flows in this MCP. |
 
-`get_wallet_nft_inventory` and `get_portfolio_summary` include standard on-chain NFT mints whose wallet balance and mint supply are both one, decimals are zero, and mint authority is revoked. This is not a Collector Crypt card catalog: compressed NFTs are not included, and no card valuation is inferred. `get_user_collection` continues to report Collector Crypt collection details as unavailable and suppresses local sandbox cards until card identity, custody, and valuation can be verified.
+`get_wallet_nft_inventory` and `get_portfolio_summary` include standard on-chain NFT mints whose wallet balance and mint supply are both one, decimals are zero, and mint authority is revoked. When a Metaplex metadata account exists, its on-chain name, symbol, and URI are included; the server does not fetch the URI. This is not a Collector Crypt card catalog: compressed NFTs are not included, and no card valuation is inferred. `get_user_collection` continues to report Collector Crypt collection details as unavailable and suppresses local sandbox cards until card identity, custody, and valuation can be verified.
 
 The sandbox response fields and tool descriptions are intentional. Never treat sandbox values, estimated card prices, or locally recorded activity as assets, payouts, or transaction receipts.
 

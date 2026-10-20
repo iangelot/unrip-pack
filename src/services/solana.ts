@@ -13,6 +13,31 @@ import {
 } from "@solana/spl-token";
 import { CONFIG } from "../config.js";
 
+const TOKEN_METADATA_PROGRAM_ID = new PublicKey("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");
+
+function readMetadataString(data: Buffer, offset: number): { value: string; next: number } | null {
+  if (offset + 4 > data.length) return null;
+  const length = data.readUInt32LE(offset);
+  const start = offset + 4;
+  const end = start + length;
+  if (length > 2048 || end > data.length) return null;
+  return { value: data.subarray(start, end).toString("utf8").replace(/\0+$/g, "").trim(), next: end };
+}
+
+function parseTokenMetadata(data: Buffer): { name: string; symbol: string; uri: string } | null {
+  // Metaplex Metadata V1 layout: key, update authority, mint, then Borsh strings.
+  let offset = 1 + 32 + 32;
+  const name = readMetadataString(data, offset);
+  if (!name) return null;
+  offset = name.next;
+  const symbol = readMetadataString(data, offset);
+  if (!symbol) return null;
+  offset = symbol.next;
+  const uri = readMetadataString(data, offset);
+  if (!uri) return null;
+  return { name: name.value, symbol: symbol.value, uri: uri.value };
+}
+
 export class SolanaService {
   private connection: Connection;
 
@@ -34,7 +59,7 @@ export class SolanaService {
     source: "Solana RPC";
     coverage: "standard_token_nfts_only";
     compressedNftsIncluded: false;
-    nfts: Array<{ mint: string; tokenAccount: string; tokenProgram: string }>;
+    nfts: Array<{ mint: string; tokenAccount: string; tokenProgram: string; metadata: { name: string; symbol: string; uri: string } | null }>;
   }> {
     const owner = new PublicKey(ownerAddress);
     const results = await Promise.allSettled([
@@ -68,7 +93,7 @@ export class SolanaService {
     }
 
     const candidateList = [...candidates.values()];
-    const nfts: Array<{ mint: string; tokenAccount: string; tokenProgram: string }> = [];
+    const verifiedNfts: Array<{ mint: string; tokenAccount: string; tokenProgram: string }> = [];
     for (let start = 0; start < candidateList.length; start += 100) {
       const batch = candidateList.slice(start, start + 100);
       const mintAccounts = await this.connection.getMultipleAccountsInfo(batch.map((item) => new PublicKey(item.mint)));
@@ -81,7 +106,23 @@ export class SolanaService {
         const supply = data.readBigUInt64LE(36);
         const decimals = data.readUInt8(44);
         if (supply !== 1n || decimals !== 0 || mintAuthorityOption !== 0) continue;
-        nfts.push({ mint: item.mint, tokenAccount: item.tokenAccount, tokenProgram: item.tokenProgram });
+        verifiedNfts.push({ mint: item.mint, tokenAccount: item.tokenAccount, tokenProgram: item.tokenProgram });
+      }
+    }
+
+    const nfts = verifiedNfts.map((nft) => ({ ...nft, metadata: null as { name: string; symbol: string; uri: string } | null }));
+    for (let start = 0; start < nfts.length; start += 100) {
+      const batch = nfts.slice(start, start + 100);
+      const metadataAddresses = batch.map(({ mint }) => PublicKey.findProgramAddressSync([
+        Buffer.from("metadata"),
+        TOKEN_METADATA_PROGRAM_ID.toBuffer(),
+        new PublicKey(mint).toBuffer()
+      ], TOKEN_METADATA_PROGRAM_ID)[0]);
+      const metadataAccounts = await this.connection.getMultipleAccountsInfo(metadataAddresses);
+      for (let i = 0; i < batch.length; i++) {
+        const account = metadataAccounts[i];
+        if (!account || !account.owner.equals(TOKEN_METADATA_PROGRAM_ID)) continue;
+        batch[i]!.metadata = parseTokenMetadata(account.data);
       }
     }
 
