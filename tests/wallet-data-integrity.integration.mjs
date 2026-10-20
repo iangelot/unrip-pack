@@ -28,6 +28,9 @@ const solana = {
   async getBalances(address) {
     return { address, sol: 0.1, usdc: 2.5, cards: 0 };
   },
+  async getOwnedNftMints(owner) {
+    return { owner, source: "Solana RPC", coverage: "standard_token_nfts_only", compressedNftsIncluded: false, nfts: [] };
+  },
   getOnChainSignatureStatus: (signature) => solanaStatus.getOnChainSignatureStatus(signature)
 };
 const accounts = new AccountService({
@@ -75,7 +78,8 @@ registerAccountTools(server, accounts, collectorCrypt, solana);
 registerVaultTools(server, collectorCrypt, accounts);
 
 const portfolio = JSON.parse((await handlers.get("get_portfolio_summary")({})).content[0].text);
-assert.equal(portfolio.dataMode, "live_onchain_balances_only");
+assert.equal(portfolio.dataMode, "live_onchain_balances_and_standard_nft_mints");
+assert.deepEqual(portfolio.nftInventory.nfts, []);
 assert.equal(portfolio.tokenBalances.usdc, 2.5);
 assert.equal(portfolio.cardCollection.status, "unavailable");
 assert.equal(portfolio.totalNetWorthUsdc, null);
@@ -98,3 +102,4 @@ assert.equal(invalidSignature.isError, true);
 assert.match(invalidSignature.content[0].text, /full base58 transaction signature/);
 
 console.log("Wallet data-integrity checks passed.");
+
