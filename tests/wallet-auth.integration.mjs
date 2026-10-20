@@ -3,6 +3,7 @@ import { startHttpServer } from "../dist/http-server.js";
 import { Keypair } from "@solana/web3.js";
 import nacl from "tweetnacl";
 import { AccountService } from "../dist/services/accountService.js";
+import { createHash } from "node:crypto";
 
 const server = startHttpServer(0);
 
@@ -85,6 +86,59 @@ try {
     body: wrongClientBody,
   });
   assert.equal(wrongClient.status, 400, "OAuth parameters must remain bound to the issued challenge");
+
+  const verifier = "v".repeat(43);
+  const pkceChallenge = createHash("sha256").update(verifier).digest("base64url");
+  const oauthState = "integration-state";
+  const oauthParams = new URLSearchParams({
+    client_id: "claude-connector",
+    redirect_uri: "https://claude.ai/api/mcp/auth_callback",
+    state: oauthState,
+    code_challenge: pkceChallenge,
+  });
+  const oauthPage = await (await fetch(`${baseUrl}/oauth/authorize?${oauthParams}`)).text();
+  const oauthMatch = oauthPage.match(/id="challengeText" name="challenge" value="([^"]+)"/);
+  assert.ok(oauthMatch, "OAuth flow should issue a challenge after validating redirect and PKCE");
+  const oauthMessage = Buffer.from(oauthMatch[1], "base64");
+  const oauthSignature = nacl.sign.detached(oauthMessage, keypair.secretKey);
+  const oauthBody = new URLSearchParams({
+    client_id: "claude-connector",
+    redirect_uri: "https://claude.ai/api/mcp/auth_callback",
+    state: oauthState,
+    code_challenge: pkceChallenge,
+    wallet_address: keypair.publicKey.toBase58(),
+    auth_mode: "signature",
+    signature_hex: Buffer.from(oauthSignature).toString("hex"),
+    challenge: oauthMatch[1],
+  });
+  const oauthResponse = await fetch(`${baseUrl}/oauth/authorize`, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: oauthBody,
+    redirect: "manual",
+  });
+  assert.equal(oauthResponse.status, 302, "valid OAuth wallet proof should redirect to registered callback");
+  const callback = new URL(oauthResponse.headers.get("location"));
+  assert.equal(callback.searchParams.get("state"), oauthState, "OAuth state must survive the redirect");
+  const authCode = callback.searchParams.get("code");
+  assert.ok(authCode, "OAuth callback must contain an authorization code");
+
+  const exchange = async (codeVerifier) => fetch(`${baseUrl}/oauth/token`, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "authorization_code",
+      code: authCode,
+      client_id: "claude-connector",
+      redirect_uri: "https://claude.ai/api/mcp/auth_callback",
+      code_verifier: codeVerifier,
+    }),
+  });
+  assert.equal((await exchange("x".repeat(43))).status, 400, "wrong PKCE verifier must be rejected");
+  const tokenResponse = await exchange(verifier);
+  assert.equal(tokenResponse.status, 200, "correct PKCE verifier should exchange the code");
+  const token = await tokenResponse.json();
+  assert.equal(token.wallet_address, keypair.publicKey.toBase58());
 
   const accountService = new AccountService({
     getBalances: async () => ({ sol: 0, usdc: 0, cards: 0 }),
