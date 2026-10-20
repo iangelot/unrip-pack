@@ -41,9 +41,9 @@ export class SolanaService {
       this.connection.getParsedTokenAccountsByOwner(owner, { programId: TOKEN_PROGRAM_ID }),
       this.connection.getParsedTokenAccountsByOwner(owner, { programId: TOKEN_2022_PROGRAM_ID })
     ]);
-    const failed = results.filter((result) => result.status === "rejected");
-    if (failed.length === results.length) {
-      const reason = failed[0]?.status === "rejected" ? failed[0].reason : "RPC request failed";
+    const failed = results.find((result) => result.status === "rejected");
+    if (failed?.status === "rejected") {
+      const reason = failed.reason;
       throw new Error(`Unable to query wallet NFT token accounts: ${reason instanceof Error ? reason.message : String(reason)}`);
     }
 
