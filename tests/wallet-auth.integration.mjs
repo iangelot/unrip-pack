@@ -46,8 +46,18 @@ try {
   assert.equal(result.isVerifiedOwner, true);
   assert.equal(result.walletAddress, keypair.publicKey.toBase58());
 
+  const replayed = await fetch(`${baseUrl}/oauth/authorize`, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body,
+  });
+  assert.equal(replayed.status, 400, "a signed challenge must be one-time use");
+
+  const invalidPage = await (await fetch(`${baseUrl}/oauth/authorize`)).text();
+  const invalidMatch = invalidPage.match(/id="challengeText" name="challenge" value="([^"]+)"/);
+  assert.ok(invalidMatch, "a fresh challenge should be issued for a new attempt");
   const invalidBody = new URLSearchParams(body);
-  invalidBody.set("signature_hex", "00".repeat(64));
+  invalidBody.set("challenge", invalidMatch[1]);
   const rejected = await fetch(`${baseUrl}/oauth/authorize`, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
@@ -55,6 +65,25 @@ try {
   });
 
   assert.equal(rejected.status, 401, "invalid signatures must be rejected");
+
+  const unregisteredRedirect = await fetch(`${baseUrl}/oauth/authorize?client_id=claude-connector&redirect_uri=https%3A%2F%2Fevil.example%2Fcallback&code_challenge=${"A".repeat(43)}`);
+  assert.equal(unregisteredRedirect.status, 400, "unregistered redirect URIs must be rejected");
+
+  const missingPkce = await fetch(`${baseUrl}/oauth/authorize?client_id=claude-connector&redirect_uri=https%3A%2F%2Fclaude.ai%2Fapi%2Fmcp%2Fauth_callback`);
+  assert.equal(missingPkce.status, 400, "OAuth redirects must include an S256 PKCE challenge");
+
+  const boundPage = await (await fetch(`${baseUrl}/oauth/authorize`)).text();
+  const boundMatch = boundPage.match(/id="challengeText" name="challenge" value="([^"]+)"/);
+  assert.ok(boundMatch, "a challenge should be issued for parameter-binding validation");
+  const wrongClientBody = new URLSearchParams(body);
+  wrongClientBody.set("challenge", boundMatch[1]);
+  wrongClientBody.set("client_id", "attacker-client");
+  const wrongClient = await fetch(`${baseUrl}/oauth/authorize`, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: wrongClientBody,
+  });
+  assert.equal(wrongClient.status, 400, "OAuth parameters must remain bound to the issued challenge");
   console.log("Wallet auth integration check passed.");
 } finally {
   await new Promise((resolve) => server.close(resolve));
