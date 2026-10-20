@@ -166,7 +166,7 @@ export function startHttpServer(port: number = 3000) {
       client_id: clientId,
       client_name: client_name || "Claude Custom Connector",
       redirect_uris: validRedirects,
-      grant_types: ["authorization_code", "refresh_token"],
+      grant_types: ["authorization_code"],
       response_types: ["code"],
       token_endpoint_auth_method: "none"
     });
@@ -210,9 +210,10 @@ export function startHttpServer(port: number = 3000) {
       if (now - entry.createdAt > 10 * 60 * 1000) authChallenges.delete(issuedChallenge);
     }
     authChallenges.set(challengeBase64, { clientId, redirectUri, state, codeChallenge, createdAt: now });
-    const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (char) => ({
+    const htmlEscapes: Record<string, string> = {
       "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
-    })[char]!);
+    };
+    const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (char) => htmlEscapes[char]);
     const safeClientId = escapeHtml(clientId);
     const safeRedirectUri = escapeHtml(redirectUri);
     const safeState = escapeHtml(state);
