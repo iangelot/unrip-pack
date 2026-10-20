@@ -26,7 +26,7 @@ export class AccountService {
     const defaultAddress = "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU";
     const savedAccount = this.storage.getAccount(defaultAddress);
     if (savedAccount) {
-      this.activeAccount = savedAccount;
+      this.activeAccount = { ...savedAccount, isVerifiedOwner: false };
     } else {
       this.activeAccount = {
         walletAddress: defaultAddress,
