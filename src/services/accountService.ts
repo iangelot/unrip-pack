@@ -109,7 +109,7 @@ export class AccountService {
   public requireVerifiedOwner(actionName: string): void {
     if (this.activeAccount.isVerifiedOwner !== true) {
       throw new Error(
-        `Security Block: Wallet ${this.activeAccount.walletAddress} is connected in Read-Only Spectator Mode. To ${actionName}, you must prove cryptographic ownership by signing in with Phantom/Solflare or PayBox Passkey at the authorization portal.`
+        `Security Block: Wallet ${this.activeAccount.walletAddress} is connected in Read-Only Spectator Mode. To ${actionName}, sign in using the wallet challenge on the authorization portal. This proves session ownership only; it does not sign transactions. For transaction signing, connect PayBox's official MCP signer in the same AI client and use the same wallet address.`
       );
     }
   }
