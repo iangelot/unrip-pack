@@ -1,7 +1,7 @@
 import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
 import crypto from "crypto";
-import { Keypair, PublicKey } from "@solana/web3.js";
+import { PublicKey } from "@solana/web3.js";
 import nacl from "tweetnacl";
 import bs58 from "bs58";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -204,7 +204,7 @@ export function startHttpServer(port: number = 3000) {
     }
     const nonce = crypto.randomBytes(16).toString("hex");
     const domain = req.headers.host || "paybox-collectorcrypt-mcp.onrender.com";
-    const challenge = `Unrip Protocol Authentication\nDomain: ${domain}\nNonce: ${nonce}\nTimestamp: ${new Date().toISOString()}\n\nSign this cryptographic challenge to authorize Claude AI to act on behalf of your Solana wallet.`;
+    const challenge = `Unrip Protocol Authentication\nDomain: ${domain}\nNonce: ${nonce}\nTimestamp: ${new Date().toISOString()}\n\nSign this one-time message to prove control of this wallet for this MCP session. This is off-chain login only; it does not approve or sign Solana transactions.`;
     // Base64 keeps the exact UTF-8 challenge bytes intact across HTML parsing and form submission.
     const challengeBase64 = Buffer.from(challenge, "utf8").toString("base64");
     const now = Date.now();
@@ -257,7 +257,6 @@ export function startHttpServer(port: number = 3000) {
           .option-desc { font-size: 0.84rem; color: var(--text-dim); line-height: 1.45; }
           .badge-pill { font-size: 0.72rem; padding: 0.2rem 0.55rem; border-radius: 999px; font-weight: 700; }
           .badge-verified { background: #14f19522; color: #14f195; border: 1px solid #14f19544; }
-          .badge-instant { background: #38bdf822; color: #38bdf8; border: 1px solid #38bdf844; }
           .badge-spectator { background: #f59e0b22; color: #f59e0b; border: 1px solid #f59e0b44; }
 
           .input-group { margin-top: 1rem; }
@@ -281,8 +280,8 @@ export function startHttpServer(port: number = 3000) {
             <span class="badge-brand">UNRIP PROTOCOL</span>
             <span class="badge-sol">SOLANA ED25519</span>
           </div>
-          <h1>Connect to Claude AI</h1>
-          <p class="subtitle">Select how you want your autonomous Claude assistant to interact with physical graded slabs, provably fair pack rips, and liquid card vaults.</p>
+          <h1>Connect a Solana wallet</h1>
+          <p class="subtitle">Link a wallet to this MCP session. The signature below proves wallet control for login only; it does not approve or sign transactions or give this server access to your funds.</p>
 
           <form id="authForm" method="POST" action="/oauth/authorize">
             <input type="hidden" name="client_id" value="${safeClientId}">
@@ -292,7 +291,7 @@ export function startHttpServer(port: number = 3000) {
             <input type="hidden" id="challengeText" name="challenge" value="${challengeBase64}">
             <input type="hidden" id="authMode" name="auth_mode" value="signature">
             <input type="hidden" id="signatureHex" name="signature_hex" value="">
-            <input type="hidden" id="selectedAddress" name="wallet_address" value="7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU">
+            <input type="hidden" id="selectedAddress" name="wallet_address" value="">
 
             <!-- Option 1: Sign-In with Solana (Phantom / Solflare) -->
             <div class="option-card primary-choice" id="cardSIWS">
@@ -300,29 +299,19 @@ export function startHttpServer(port: number = 3000) {
                 <span>🦊 Sign-In with Solana Extension</span>
                 <span class="badge-pill badge-verified">BROWSER EXTENSION</span>
               </div>
-              <div class="option-desc">Connect using Phantom, Solflare, or Backpack to cryptographically sign a challenge and prove ownership.</div>
+              <div class="option-desc">Connect Phantom, Solflare, Backpack, or another supported browser wallet. It signs a one-time off-chain login message only; no Solana transaction is approved here.</div>
               <button type="button" class="btn-action" onclick="connectAndSignBrowserWallet()">Sign with Browser Wallet</button>
             </div>
 
-            <!-- Option 2: Instant Non-Custodial Agent Wallet -->
-            <div class="option-card" id="cardInstant">
-              <div class="option-title">
-                <span>⚡ Instant Non-Custodial Wallet</span>
-                <span class="badge-pill badge-instant">AUTO-FUNDED</span>
-              </div>
-              <div class="option-desc">Generates a fresh, dedicated Solana wallet keypair for your agent pre-loaded with $500 USDC testnet balance and demo vaulted cards.</div>
-              <button type="button" class="btn-action btn-secondary" onclick="useInstantWallet()">Generate Instant Agent Wallet</button>
-            </div>
-
-            <!-- Option 3: Read-Only Spectator Mode -->
+            <!-- Option 2: Read-Only Spectator Mode -->
             <div class="option-card" id="cardSpectator">
               <div class="option-title">
                 <span>👁️ Read-Only Spectator Mode</span>
                 <span class="badge-pill badge-spectator">INSPECTION ONLY</span>
               </div>
-              <div class="option-desc">Enter any public Solana address to view collection value and card slabs without granting spending or transfer permissions.</div>
+              <div class="option-desc">Enter a public Solana address to inspect its RPC token balances and standard NFT mints. This does not verify Collector Crypt card identity or value and cannot spend or transfer funds.</div>
               <div class="input-group">
-                <input type="text" id="spectatorAddress" placeholder="Paste Solana address (e.g. 7xKXtg...)" value="7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU">
+                <input type="text" id="spectatorAddress" placeholder="Paste a Solana address">
                 <button type="button" class="btn-action btn-secondary" style="margin-top: 0.5rem;" onclick="submitSpectatorMode()">Connect in Spectator Mode</button>
               </div>
             </div>
@@ -331,7 +320,7 @@ export function startHttpServer(port: number = 3000) {
           </form>
 
           <div class="security-footer">
-            🔒 Non-custodial architecture. Your private keys never leave your device. All actions are subject to user-configured spending safety limits and anti-injection confirmation challenges.
+            🔒 This page never receives private keys. Wallet linking is an off-chain login signature only; transaction signing is a separate capability supplied by your PayBox host, if available.
           </div>
         </div>
 
@@ -398,14 +387,6 @@ export function startHttpServer(port: number = 3000) {
             }
           }
 
-          function useInstantWallet() {
-            document.getElementById('authMode').value = 'instant';
-            showStatus('⚡ Generating instant non-custodial wallet with demo balance...');
-            setTimeout(() => {
-              document.getElementById('authForm').submit();
-            }, 300);
-          }
-
           function submitSpectatorMode() {
             const addr = document.getElementById('spectatorAddress').value.trim();
             if (!addr) {
@@ -452,11 +433,7 @@ export function startHttpServer(port: number = 3000) {
     let finalAddress = (wallet_address as string || "").trim();
     let isVerifiedOwner = false;
 
-    if (auth_mode === "instant") {
-      const kp = Keypair.generate();
-      finalAddress = kp.publicKey.toBase58();
-      isVerifiedOwner = true;
-    } else if (auth_mode === "signature") {
+    if (auth_mode === "signature") {
       if (!finalAddress || !sharedAccountService.validateSolanaAddress(finalAddress)) {
         res.status(400).send("Invalid Solana wallet address provided.");
         return;
@@ -492,16 +469,20 @@ export function startHttpServer(port: number = 3000) {
         res.status(400).send(`Signature verification error: ${err instanceof Error ? err.message : String(err)}`);
         return;
       }
-    } else {
-      // Spectator mode
+    } else if (auth_mode === "spectator") {
+      // Read-only mode: this links an address but does not prove ownership.
       if (!finalAddress) {
-        finalAddress = "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU";
+        res.status(400).send("Enter a Solana wallet address for read-only access.");
+        return;
       }
       if (!sharedAccountService.validateSolanaAddress(finalAddress)) {
         res.status(400).send(`Invalid Solana address format: ${finalAddress}`);
         return;
       }
       isVerifiedOwner = false;
+    } else {
+      res.status(400).send("Unsupported wallet authorization mode.");
+      return;
     }
 
     createAndRedirectCode(finalAddress, isVerifiedOwner, issued.clientId, issued.redirectUri, issued.state, issued.codeChallenge, res);
@@ -637,24 +618,24 @@ export function startHttpServer(port: number = 3000) {
       </head>
       <body>
         <h1>Unrip Agent Protocol <span class="badge">ONLINE</span></h1>
-        <p>An autonomous, non-custodial Model Context Protocol (MCP) agent connecting <strong>Claude AI</strong> with physical authenticated graded collectibles, provably fair pack openings, and liquid vault infrastructure on Solana.</p>
+        <p>A Collector Crypt MCP for reading public Gacha data and selected Solana wallet information. Standard Gacha purchase and buyback flows require a host wallet that can sign Solana transactions; this server does not hold wallet keys.</p>
         
         <div class="features">
           <div class="feat-card">
-            <strong>🔒 Wallet Auto-Resolution</strong><br>
-            Claude automatically knows your connected wallet. Zero 44-character address typing required.
+            <strong>🔒 Wallet linking</strong><br>
+            A browser wallet can sign an off-chain login message. This does not authorize Solana transactions.
           </div>
           <div class="feat-card">
-            <strong>📦 Provably Fair Pack Rips</strong><br>
-            CSPRNG HMAC-SHA256 outcome proofs, PSA grades, instant valuation, and PnL receipts.
+            <strong>📦 Collector Crypt Gacha</strong><br>
+            Read public machine and pack information. Pack outcomes and card proof come from Collector Crypt; this MCP does not independently verify collectible identity or value.
           </div>
           <div class="feat-card">
-            <strong>💰 Guaranteed Liquid Buyback</strong><br>
-            Instant USDC cash-out credited directly to your balance.
+            <strong>💰 Eligible pack buybacks</strong><br>
+            The MCP can prepare the documented Gacha buyback flow, but completion requires a supported PayBox transaction signer and Collector Crypt settlement.
           </div>
           <div class="feat-card">
-            <strong>🛡️ Spend Limits & Safeguards</strong><br>
-            Hard platform ceilings ($500/tx, $2,000/day), anti-injection challenge codes, and passkey thresholds.
+            <strong>🛡️ Wallet safety</strong><br>
+            Review each prepared transaction in your wallet before signing. This MCP does not create or fund agent wallets.
           </div>
         </div>
 

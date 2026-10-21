@@ -1,5 +1,4 @@
-import { PublicKey, Keypair } from "@solana/web3.js";
-import bs58 from "bs58";
+import { PublicKey } from "@solana/web3.js";
 import {
   UserAccount,
   SpendLimits,
@@ -53,59 +52,6 @@ export class AccountService {
     } catch {
       return false;
     }
-  }
-
-  /**
-   * Create a new non-custodial PayBox Agent Wallet on Solana
-   */
-  public createAgentWallet(): {
-    account: UserAccount;
-    secretKeyBase58: string;
-    message: string;
-  } {
-    const keypair = Keypair.generate();
-    const address = keypair.publicKey.toBase58();
-    const secretKeyBase58 = bs58.encode(keypair.secretKey);
-
-    const newAccount: UserAccount = {
-      walletAddress: address,
-      connectedVia: "PayBox MPC Vault",
-      isConnected: true,
-      balances: {
-        sol: 1.5,
-        usdc: 500.0,
-        cards: 10000
-      },
-      spendLimits: {
-        perTransactionCapUsd: 150,
-        dailySpendCapUsd: 1000,
-        dailySpentSoFarUsd: 0,
-        requiresPasskeyAboveUsd: 75
-      },
-      isVerifiedOwner: true,
-      createdAt: new Date().toISOString(),
-      lastActive: new Date().toISOString()
-    };
-
-    this.activeAccount = newAccount;
-    this.storage.saveAccount(newAccount);
-
-    const txSig = `5gen${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}...sol`;
-    this.recordTransaction({
-      signature: txSig,
-      type: "PACK_BUY",
-      status: "finalized",
-      timestamp: new Date().toISOString(),
-      description: `Created non-custodial PayBox Agent Wallet on Solana: ${address}`,
-      amountUsd: 0,
-      solanaExplorerUrl: `https://solscan.io/account/${address}`
-    });
-
-    return {
-      account: newAccount,
-      secretKeyBase58,
-      message: `Successfully created and linked new PayBox non-custodial wallet: ${address}. Initial sandbox balances credited (1.5 SOL, 500 USDC, 10,000 CARDS).`
-    };
   }
 
   /**

@@ -277,39 +277,18 @@ export function registerAccountTools(
     }
   );
 
-  // Tool 6: create_agent_wallet
+  // Wallet creation is intentionally unavailable: this MCP does not generate or custody wallets.
   server.tool(
     "create_agent_wallet",
-    "Unavailable: server-generated wallet keys are not safe to expose or manage in this service.",
+    "Unavailable: connect your own wallet instead. This MCP cannot create, fund, or custody an agent wallet.",
     {},
-    async () => {
-      if (!hasLiveSettlement()) return liveSettlementUnavailable("create_agent_wallet");
-      try {
-        const result = accountService.createAgentWallet();
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                status: "WALLET_CREATED",
-                message: result.message,
-                walletAddress: result.account.walletAddress,
-                connectedVia: result.account.connectedVia,
-                initialBalances: result.account.balances,
-                spendLimits: result.account.spendLimits,
-                securityNote: "Keys are non-custodial and secured in PayBox MPC secure enclaves."
-              }, null, 2)
-            }
-          ]
-        };
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        return {
-          content: [{ type: "text", text: `Error creating wallet: ${msg}` }],
-          isError: true
-        };
-      }
-    }
+    async () => ({
+      content: [{
+        type: "text",
+        text: "Unavailable: this MCP does not generate, fund, or custody wallets. Connect a wallet you control through the authorization page."
+      }],
+      isError: true
+    })
   );
 
   // Tool 7: get_transactions
