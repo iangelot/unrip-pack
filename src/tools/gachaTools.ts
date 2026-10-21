@@ -119,7 +119,7 @@ export function registerGachaTools(
 
   server.tool(
     "prepare_collector_crypt_pack_purchase",
-    "Prepare a real Collector Crypt mainnet pack purchase. This reserves a memo and returns the exact unsigned transaction for the verified wallet to review and sign through PayBox. No funds move until that wallet signs and submits it. The Gacha API partner key is optional.",
+    "Prepare a real Collector Crypt mainnet pack purchase. Returns the exact unsigned transaction. This MCP cannot invoke another MCP server: to complete it, use the official PayBox MCP request_wallet_sign tool in the same AI client (if its current schema supports Solana transaction signing), then pass the complete signed base64 transaction to submit_collector_crypt_transaction. The PayBox wallet must match this verified session wallet. No funds move before wallet approval and submission. The Gacha API partner key is optional.",
     {
       packType: z.string().min(1).max(80).describe("Live Collector Crypt machine code, such as pokemon_50"),
       expectedPriceUsdc: z.number().positive().describe("Current live machine price the user explicitly agreed to pay"),
@@ -162,7 +162,8 @@ export function registerGachaTools(
           turbo: args.turbo,
           memo: generated.memo,
           unsignedTransactionBase64: generated.transaction,
-          nextStep: "Have PayBox request_wallet_sign review and sign this exact Solana transaction for the verified wallet, then pass the complete signed base64 transaction and memo to submit_collector_crypt_transaction. Do not alter the transaction."
+          signingHandoff: { provider: "PayBox official MCP", serverUrl: "https://api.paybox.sh/mcp", tool: "request_wallet_sign", walletMustMatch: walletAddress, transactionEncoding: "base64 serialized Solana transaction", approvalRequired: true },
+          nextStep: "In this same AI client, use the official PayBox MCP request_wallet_sign tool with its runtime-discovered Solana transaction-signing schema to review/sign this exact transaction. If that tool or schema is unavailable, stop; do not use a different wallet. If PayBox returns pending approval, poll its existing request instead of submitting another signing request. Once it returns the complete signed base64 transaction for this same wallet, call submit_collector_crypt_transaction with that transaction and memo. Do not alter the transaction."
         });
       } catch (error) {
         return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
@@ -172,7 +173,7 @@ export function registerGachaTools(
 
   server.tool(
     "prepare_collector_crypt_gift",
-    "Prepare a real Collector Crypt Gacha gift purchase on Solana mainnet. The verified sender pays; the recipient receives the pack. Returns an unsigned transaction for explicit wallet review/signing. The Gacha API partner key is optional.",
+    "Prepare a real Collector Crypt Gacha gift purchase on Solana mainnet. The verified sender pays; the recipient receives the pack. Returns an unsigned transaction. This MCP cannot call PayBox itself: use the official PayBox MCP request_wallet_sign tool through the same AI client, if its current runtime schema supports Solana transaction signing. The signing wallet must match the verified sender. The Gacha API partner key is optional.",
     {
       receiverAddress: z.string().min(32).max(44).describe("Recipient Solana wallet"),
       packType: z.string().min(1).max(80).describe("Live Collector Crypt machine code"),
@@ -205,7 +206,8 @@ export function registerGachaTools(
         return textResult({ status: "AWAITING_WALLET_SIGNATURE", network: "Solana mainnet", dataSource: "Collector Crypt Gacha API", apiKeyRequired: false,
           sender, recipient: args.receiverAddress, packType: args.packType, count: args.count, totalCostUsdc: expected,
           memo: generated.memo, unsignedTransactionBase64: generated.transaction,
-          nextStep: "Have PayBox review and sign this exact transaction; then submit it with submit_collector_crypt_transaction." });
+          signingHandoff: { provider: "PayBox official MCP", serverUrl: "https://api.paybox.sh/mcp", tool: "request_wallet_sign", walletMustMatch: sender, transactionEncoding: "base64 serialized Solana transaction", approvalRequired: true },
+          nextStep: "In this same AI client, use PayBox request_wallet_sign with its runtime-discovered Solana transaction-signing schema. If PayBox cannot sign this format or the sender wallet does not match, stop. If pending approval is returned, poll that request instead of creating another. After approval, pass the complete signed base64 transaction and memo to submit_collector_crypt_transaction." });
       } catch (error) {
         return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
       }
@@ -214,7 +216,7 @@ export function registerGachaTools(
 
   server.tool(
     "submit_collector_crypt_transaction",
-    "Submit a previously prepared Collector Crypt purchase, gift, or buyback transaction. Verifies that the signed transaction message is byte-for-byte the prepared transaction and contains a valid signature from the verified session wallet before submission.",
+    "Submit a prepared Collector Crypt pack purchase or gift only after a user-approved wallet signer has returned the complete signed base64 Solana transaction. Verifies the message matches the prepared transaction exactly and contains the verified session wallet signature before submission. This tool does not sign transactions. Use submit_collector_crypt_buyback for a prepared buyback.",
     {
       memo: z.string().min(1).max(160).describe("Memo returned by the matching prepare tool"),
       signedTransactionBase64: z.string().min(1).max(100000).describe("Complete serialized signed Solana transaction returned by PayBox"),
@@ -279,7 +281,7 @@ export function registerGachaTools(
 
   server.tool(
     "prepare_collector_crypt_buyback",
-    "Check current buyback eligibility, then prepare the real Collector Crypt NFT-to-USDC buyback transaction. Returns the exact payout and unsigned transaction; the verified wallet must sign it before submission.",
+    "Check current buyback eligibility, then prepare the real Collector Crypt NFT-to-USDC buyback transaction. Returns the exact payout and unsigned transaction. To sign it, use PayBox official MCP request_wallet_sign through the same AI client if its current runtime schema supports this Solana transaction. The signing wallet must match the verified wallet. This MCP cannot invoke PayBox directly.",
     {
       nftAddress: z.string().min(32).max(44).describe("Card NFT mint to sell back"),
       expectedPayoutUsdc: z.number().positive().describe("Current payout the user explicitly agreed to receive"),
@@ -300,7 +302,8 @@ export function registerGachaTools(
         return textResult({ status: "AWAITING_WALLET_SIGNATURE", network: "Solana mainnet", sandbox: false,
           wallet: walletAddress, nftAddress: args.nftAddress, payoutUsdc, memo: generated.memo,
           unsignedTransactionBase64: generated.serializedTransaction,
-          nextStep: "Have PayBox review and sign this exact buyback transaction, then call submit_collector_crypt_buyback with the signed transaction and NFT address." });
+          signingHandoff: { provider: "PayBox official MCP", serverUrl: "https://api.paybox.sh/mcp", tool: "request_wallet_sign", walletMustMatch: walletAddress, transactionEncoding: "base64 serialized Solana transaction", approvalRequired: true },
+          nextStep: "In this same AI client, use PayBox request_wallet_sign with its runtime-discovered Solana transaction-signing schema. If PayBox cannot sign this format or the wallet does not match, stop. If pending approval is returned, poll that request instead of creating another. Once it returns the complete signed base64 transaction, call submit_collector_crypt_buyback with it and this NFT address." });
       } catch (error) {
         return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
       }

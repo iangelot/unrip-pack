@@ -14,7 +14,7 @@ This MCP exposes live Collector Crypt Gacha reads and user-authorized mainnet pa
 | Gacha machines and recent winners | Read from Collector Crypt's public Gacha API. These are platform API records, not independently verified by this server. |
 | Pack counts and memo status | Read from Collector Crypt's public Gacha API for a wallet or memo. This does not enumerate all NFTs in a wallet. |
 | Local seeded card examples and local history | Sandbox examples only; they are not verified Collector Crypt records or wallet holdings. |
-| Pack purchase, gift, and buyback preparation/submission | Uses the official live Gacha API, exact returned transaction bytes, a verified wallet signature, and on-chain signature status. |
+| Pack purchase, gift, and buyback | Can complete when the same agent client has both MCPs connected: this MCP prepares and validates/submits; PayBox's official MCP must provide a compatible user-approved Solana transaction signature. Without that compatible PayBox signer, these flows are unavailable end to end. |
 | Pack opening and gift claims | Uses Collector Crypt's official memo/challenge APIs; the recipient signs a one-time off-chain claim message. |
 | Marketplace, swaps, loans, card transfers, and physical redemption | Not implemented as live flows in this MCP. |
 
@@ -44,9 +44,9 @@ These tools use Collector Crypt's documented public API. Pack history is not the
 
 ## Signing and safety
 
-Money-moving tools require a cryptographically verified wallet session and explicit user confirmation of the live price or payout. The server prepares the official transaction; the wallet/PayBox signer must present that exact transaction for review and signing. The server verifies the transaction message and wallet signature before calling Collector Crypt's submit endpoint. Private keys are never handled or stored by this server.
+Money-moving tools require a cryptographically verified wallet session and explicit user confirmation of the live price or payout. This server prepares the official transaction but cannot invoke another MCP server. The same AI client must also have the official PayBox MCP connected; the agent uses PayBox's runtime-discovered signer tool to present the transaction for user review/signing. This server verifies the returned transaction message and wallet signature before submitting to Collector Crypt. Private keys are never handled or stored here.
 
-The repository does not contain a PayBox transaction-signer connector implementation. Wallet authorization here proves control of an address with an off-chain message only; it does not provide a transaction signer. The purchase and buyback code can prepare transactions, but a live flow cannot complete unless your PayBox host can sign Solana transactions and pass the complete signed result back to the matching submit tool. Never call the legacy `*_sandbox` tools with a real wallet. The former “instant agent wallet” option has been removed; this MCP does not create, fund, or custody wallets.
+This MCP does not call other MCP servers or hold a PayBox signing credential. To execute prepared purchases, gifts, or buybacks, connect PayBox's official MCP (`https://api.paybox.sh/mcp`) to the same AI client as this MCP, then use its runtime-discovered `request_wallet_sign` tool if it supports signing the returned Solana transaction. The PayBox credential must be the same address linked and cryptographically verified in this MCP session. Pass the complete signed base64 transaction back to the matching submit tool; this MCP verifies the transaction message and wallet signature before it submits to Collector Crypt. If PayBox reports pending approval, poll the existing request; do not create a duplicate signing request. If the tool cannot sign this transaction format, stop. Never call the legacy `*_sandbox` tools with a real wallet. This MCP does not create, fund, or custody wallets.
 
 Prepared transaction state is short-lived and kept in memory for the active MCP server session. Reconnects or process restarts require preparing a fresh transaction. Do not prepare and sign transactions in one session then submit them through another.
 

@@ -320,7 +320,7 @@ export function startHttpServer(port: number = 3000) {
           </form>
 
           <div class="security-footer">
-            🔒 This page never receives private keys. Wallet linking is an off-chain login signature only; transaction signing is a separate capability supplied by your PayBox host, if available.
+            🔒 This page only verifies wallet login; it cannot approve a Solana transaction. To sign Collector Crypt transactions, connect PayBox’s official MCP (https://api.paybox.sh/mcp) to the same AI client as this MCP and use a PayBox wallet with the same address.
           </div>
         </div>
 
