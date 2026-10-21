@@ -216,7 +216,7 @@ export function registerGachaTools(
 
   server.tool(
     "submit_collector_crypt_transaction",
-    "Submit a prepared Collector Crypt purchase, gift, or buyback only after the official PayBox signer (or another explicitly user-selected compatible wallet signer) has returned the complete signed base64 Solana transaction. Verifies the message matches the prepared transaction exactly and contains the verified session wallet signature before submission. This tool does not sign transactions.",
+    "Submit a prepared Collector Crypt pack purchase or gift only after a user-approved wallet signer has returned the complete signed base64 Solana transaction. Verifies the message matches the prepared transaction exactly and contains the verified session wallet signature before submission. This tool does not sign transactions. Use submit_collector_crypt_buyback for a prepared buyback.",
     {
       memo: z.string().min(1).max(160).describe("Memo returned by the matching prepare tool"),
       signedTransactionBase64: z.string().min(1).max(100000).describe("Complete serialized signed Solana transaction returned by PayBox"),
