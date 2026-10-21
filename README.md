@@ -6,10 +6,10 @@ This MCP exposes live Collector Crypt Gacha reads and user-authorized mainnet pa
 
 | Capability | Current behavior |
 | --- | --- |
-| Phantom wallet identity link | Signs a one-time off-chain challenge; it does not send a Solana transaction. This is a direct browser-wallet flow, not PayBox wallet authorization. |
+| Phantom wallet identity link | Signs a one-time off-chain challenge for login; it does not approve or sign Solana transactions. A separate PayBox transaction signer is required for spending flows. |
 | SOL / SPL balances | Read from Solana RPC for the selected public address. |
 | Standard NFT inventory | Lists Token and Token-2022 mints with wallet balance 1, mint supply 1, zero decimals, and revoked mint authority, verified from Solana RPC. Includes on-chain Metaplex name/symbol/URI when present. Compressed NFTs are not included; collectible value is not inferred. |
-| Portfolio summary | Shows RPC token balances only. It does not add sandbox cards, guessed prices, or simulated pack PnL to net worth. |
+| Portfolio summary | Shows RPC token balances and standard NFT mints. It does not add sandbox cards, guessed prices, or simulated pack PnL to net worth. |
 | Transaction status | Looks up a full base58 signature on the configured Solana RPC; local records are clearly separate and cannot prove settlement. |
 | Gacha machines and recent winners | Read from Collector Crypt's public Gacha API. These are platform API records, not independently verified by this server. |
 | Pack counts and memo status | Read from Collector Crypt's public Gacha API for a wallet or memo. This does not enumerate all NFTs in a wallet. |
@@ -46,7 +46,7 @@ These tools use Collector Crypt's documented public API. Pack history is not the
 
 Money-moving tools require a cryptographically verified wallet session and explicit user confirmation of the live price or payout. The server prepares the official transaction; the wallet/PayBox signer must present that exact transaction for review and signing. The server verifies the transaction message and wallet signature before calling Collector Crypt's submit endpoint. Private keys are never handled or stored by this server.
 
-The repository does not contain a PayBox signer connector implementation: the MCP returns the transaction or message to the host for its connected wallet-signing capability. Confirm that your PayBox host can sign Solana transactions/messages and pass the complete signed result back to the matching submit/claim tool before attempting a live purchase. Never call the legacy `*_sandbox` tools with a real wallet.
+The repository does not contain a PayBox transaction-signer connector implementation. Wallet authorization here proves control of an address with an off-chain message only; it does not provide a transaction signer. The purchase and buyback code can prepare transactions, but a live flow cannot complete unless your PayBox host can sign Solana transactions and pass the complete signed result back to the matching submit tool. Never call the legacy `*_sandbox` tools with a real wallet. The former “instant agent wallet” option has been removed; this MCP does not create, fund, or custody wallets.
 
 Prepared transaction state is short-lived and kept in memory for the active MCP server session. Reconnects or process restarts require preparing a fresh transaction. Do not prepare and sign transactions in one session then submit them through another.
 
