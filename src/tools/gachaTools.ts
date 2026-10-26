@@ -162,11 +162,84 @@ export function registerGachaTools(
           turbo: args.turbo,
           memo: generated.memo,
           unsignedTransactionBase64: generated.transaction,
-          signingHandoff: { provider: "PayBox official MCP", serverUrl: "https://api.paybox.sh/mcp", tool: "request_wallet_sign", walletMustMatch: walletAddress, transactionEncoding: "base64 serialized Solana transaction", approvalRequired: true },
-          nextStep: "In this same AI client, use the official PayBox MCP request_wallet_sign tool with its runtime-discovered Solana transaction-signing schema to review/sign this exact transaction. If that tool or schema is unavailable, stop; do not use a different wallet. If PayBox returns pending approval, poll its existing request instead of submitting another signing request. Once it returns the complete signed base64 transaction for this same wallet, call submit_collector_crypt_transaction with that transaction and memo. Do not alter the transaction."
+          signingInstructions: "Sign this transaction using your connected Solana wallet (e.g. Phantom, Solflare, or Solana CLI).",
+          nextStep: "Pass the complete signed base64 transaction and memo to submit_collector_crypt_transaction. Alternatively, configure AGENT_PRIVATE_KEY in environment to execute autonomously."
         });
       } catch (error) {
         return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    "execute_collector_crypt_pack_purchase",
+    "Autonomously purchase a Collector Crypt Gacha pack on Solana. Requires AGENT_PRIVATE_KEY or SOLANA_PRIVATE_KEY in environment variables. Prepares, signs, and submits the transaction autonomously in one step.",
+    {
+      packType: z.string().min(1).max(80).describe("Live Collector Crypt machine code, such as pokemon_50"),
+      expectedPriceUsdc: z.number().positive().describe("Current live machine price agreed to pay"),
+      turbo: z.boolean().optional().default(false).describe("If true, Collector Crypt automatically buys back Common wins")
+    },
+    async (args: any) => {
+      const privateKey = (process.env.AGENT_PRIVATE_KEY || process.env.SOLANA_PRIVATE_KEY || "").trim();
+      if (!privateKey) {
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              status: "AUTONOMOUS_SIGNING_NOT_CONFIGURED",
+              message: "No AGENT_PRIVATE_KEY or SOLANA_PRIVATE_KEY set in environment. Use prepare_collector_crypt_pack_purchase, sign the transaction with your wallet, and submit via submit_collector_crypt_transaction.",
+              alternative: "Call prepare_collector_crypt_pack_purchase instead."
+            }, null, 2)
+          }],
+          isError: false
+        };
+      }
+      try {
+        const walletAddress = accountService.getActiveAddress();
+        const machines = await collectorCryptApi.getMachines() as any;
+        const machineRows = Array.isArray(machines?.machines) ? machines.machines : [];
+        const machine = machineRows.find((item: any) => item?.code === args.packType && item?.public === true);
+        const price = Number(machine?.price);
+        if (!machine || !Number.isFinite(price) || price <= 0) throw new Error(`Public live Gacha machine ${args.packType} is unavailable.`);
+        if (Math.abs(price - args.expectedPriceUsdc) > 0.000001) throw new Error(`Price changed to ${price} USDC. Confirm price and retry.`);
+
+        const balance = await solanaService.getBalances(walletAddress);
+        if (balance.usdc < price) throw new Error(`Insufficient USDC balance: have ${balance.usdc}, need ${price}.`);
+
+        const spendLimit = accountService.verifySpendLimits(price);
+        if (!spendLimit.allowed) throw new Error(`Spend safety block: ${spendLimit.errorReason}`);
+
+        const generated = await collectorCryptApi.generatePack({ playerAddress: walletAddress, packType: args.packType, turbo: args.turbo });
+        const signedTx = solanaService.signTransactionLocally(generated.transaction, privateKey);
+        const submission = await collectorCryptApi.submitTransaction(signedTx);
+        if (submission.success !== true || typeof submission.signature !== "string") {
+          throw new Error("Collector Crypt did not confirm transaction submission.");
+        }
+
+        accountService.recordSpend(price);
+        accountService.recordTransaction({
+          signature: submission.signature,
+          type: "PACK_BUY",
+          status: "confirmed",
+          timestamp: new Date().toISOString(),
+          description: `Autonomous Gacha pack purchase: ${args.packType} (memo: ${generated.memo})`,
+          amountUsd: price,
+          solanaExplorerUrl: `https://solscan.io/tx/${submission.signature}`
+        });
+
+        return textResult({
+          status: "PURCHASE_SUBMITTED",
+          network: "Solana mainnet",
+          wallet: walletAddress,
+          packType: args.packType,
+          memo: generated.memo,
+          signature: submission.signature,
+          solanaExplorerUrl: `https://solscan.io/tx/${submission.signature}`,
+          nextStep: `Use open_gacha_pack with memo "${generated.memo}" or check get_collector_crypt_pack_status.`
+        });
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { content: [{ type: "text", text: `Error executing pack purchase: ${msg}` }], isError: true };
       }
     }
   );
@@ -206,8 +279,8 @@ export function registerGachaTools(
         return textResult({ status: "AWAITING_WALLET_SIGNATURE", network: "Solana mainnet", dataSource: "Collector Crypt Gacha API", apiKeyRequired: false,
           sender, recipient: args.receiverAddress, packType: args.packType, count: args.count, totalCostUsdc: expected,
           memo: generated.memo, unsignedTransactionBase64: generated.transaction,
-          signingHandoff: { provider: "PayBox official MCP", serverUrl: "https://api.paybox.sh/mcp", tool: "request_wallet_sign", walletMustMatch: sender, transactionEncoding: "base64 serialized Solana transaction", approvalRequired: true },
-          nextStep: "In this same AI client, use PayBox request_wallet_sign with its runtime-discovered Solana transaction-signing schema. If PayBox cannot sign this format or the sender wallet does not match, stop. If pending approval is returned, poll that request instead of creating another. After approval, pass the complete signed base64 transaction and memo to submit_collector_crypt_transaction." });
+          signingInstructions: "Sign this transaction using your connected Solana wallet (e.g. Phantom, Solflare, or Solana CLI).",
+          nextStep: "Pass the complete signed base64 transaction and memo to submit_collector_crypt_transaction." });
       } catch (error) {
         return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
       }
@@ -216,10 +289,10 @@ export function registerGachaTools(
 
   server.tool(
     "submit_collector_crypt_transaction",
-    "Submit a prepared Collector Crypt pack purchase or gift only after a user-approved wallet signer has returned the complete signed base64 Solana transaction. Verifies the message matches the prepared transaction exactly and contains the verified session wallet signature before submission. This tool does not sign transactions. Use submit_collector_crypt_buyback for a prepared buyback.",
+    "Submit a prepared Collector Crypt pack purchase or gift after your wallet has signed the base64 Solana transaction. Verifies the message matches the prepared transaction exactly and contains the verified session wallet signature before submission.",
     {
       memo: z.string().min(1).max(160).describe("Memo returned by the matching prepare tool"),
-      signedTransactionBase64: z.string().min(1).max(100000).describe("Complete serialized signed Solana transaction returned by PayBox"),
+      signedTransactionBase64: z.string().min(1).max(100000).describe("Complete serialized signed base64 Solana transaction"),
       userAddress: z.string().optional().describe("Must match the verified wallet that prepared the operation")
     },
     async (args: any) => {
@@ -302,8 +375,8 @@ export function registerGachaTools(
         return textResult({ status: "AWAITING_WALLET_SIGNATURE", network: "Solana mainnet", sandbox: false,
           wallet: walletAddress, nftAddress: args.nftAddress, payoutUsdc, memo: generated.memo,
           unsignedTransactionBase64: generated.serializedTransaction,
-          signingHandoff: { provider: "PayBox official MCP", serverUrl: "https://api.paybox.sh/mcp", tool: "request_wallet_sign", walletMustMatch: walletAddress, transactionEncoding: "base64 serialized Solana transaction", approvalRequired: true },
-          nextStep: "In this same AI client, use PayBox request_wallet_sign with its runtime-discovered Solana transaction-signing schema. If PayBox cannot sign this format or the wallet does not match, stop. If pending approval is returned, poll that request instead of creating another. Once it returns the complete signed base64 transaction, call submit_collector_crypt_buyback with it and this NFT address." });
+          signingInstructions: "Sign this transaction using your connected Solana wallet (e.g. Phantom, Solflare, or Solana CLI).",
+          nextStep: "Once signed, call submit_collector_crypt_buyback with the signed base64 transaction and nftAddress." });
       } catch (error) {
         return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
       }

@@ -2,9 +2,12 @@ import {
   Connection,
   PublicKey,
   Transaction,
+  VersionedTransaction,
+  Keypair,
   SystemProgram,
   LAMPORTS_PER_SOL
 } from "@solana/web3.js";
+import bs58 from "bs58";
 import {
   getAssociatedTokenAddressSync,
   createTransferInstruction,
@@ -279,6 +282,36 @@ export class SolanaService {
       serializedBase64: serialized,
       recentBlockhash: blockhash
     };
+  }
+
+  /**
+   * Broadcast a signed base64 Solana transaction to the network
+   */
+  public async sendRawTransaction(signedBase64: string): Promise<string> {
+    const rawTx = Buffer.from(signedBase64, "base64");
+    return this.connection.sendRawTransaction(rawTx, {
+      skipPreflight: false,
+      preflightCommitment: "confirmed"
+    });
+  }
+
+  /**
+   * Sign an unsigned base64 Solana transaction with an authorized Keypair
+   */
+  public signTransactionLocally(unsignedBase64: string, privateKeyBase58: string): string {
+    const secretKey = bs58.decode(privateKeyBase58.trim());
+    const keypair = Keypair.fromSecretKey(secretKey);
+    const txBytes = Buffer.from(unsignedBase64, "base64");
+
+    try {
+      const vtx = VersionedTransaction.deserialize(txBytes);
+      vtx.sign([keypair]);
+      return Buffer.from(vtx.serialize()).toString("base64");
+    } catch {
+      const tx = Transaction.from(txBytes);
+      tx.partialSign(keypair);
+      return tx.serialize().toString("base64");
+    }
   }
 }
 

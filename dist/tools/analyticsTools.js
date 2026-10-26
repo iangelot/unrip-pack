@@ -1,7 +1,7 @@
 import { z } from "zod";
 export function registerAnalyticsTools(server, ccService) {
     // Tool: calculate_pack_ev
-    server.tool("calculate_pack_ev", "Calculate the statistical Expected Value (EV) of a Collector Crypt Gacha pack. Analyzes pull probabilities against secondary market floors to determine expected ROI or house margin.", {
+    server.tool("calculate_pack_ev", "Calculate a sandbox pack EV estimate from hard-coded probabilities and prices. It is not live market data or a guarantee of returns.", {
         packId: z.string().describe("The pack ID (e.g. 'pack-vintage-grails', 'pack-modern-heat')")
     }, async (args) => {
         const pack = ccService.getPackById(args.packId);
@@ -45,11 +45,11 @@ export function registerAnalyticsTools(server, ccService) {
                 : "House edge present; best for collectors seeking high-variance top grail prizes."
         };
         return {
-            content: [{ type: "text", text: JSON.stringify(analysis, null, 2) }]
+            content: [{ type: "text", text: JSON.stringify({ ...analysis, dataMode: "sandbox", marketDataVerified: false }, null, 2) }]
         };
     });
     // Tool: get_card_market_comps
-    server.tool("get_card_market_comps", "Retrieve historical auction sales comps, price trends, and PSA population reports across major auction houses (Heritage, PWCC, eBay, Goldin).", {
+    server.tool("get_card_market_comps", "Show hard-coded sample auction comps and population figures. These are not fetched from auction houses or grading databases.", {
         cardName: z.string().describe("Card title (e.g. 'Charizard Base Set 1st Edition', 'Pikachu Illustrator', 'Luffy Manga')"),
         grade: z.string().optional().default("PSA 10").describe("Target grade (e.g. 'PSA 10', 'BGS 9.5', 'PSA 9')")
     }, async (args) => {
@@ -91,17 +91,25 @@ export function registerAnalyticsTools(server, ccService) {
             }
         };
         return {
-            content: [{ type: "text", text: JSON.stringify(compData, null, 2) }]
+            content: [{ type: "text", text: JSON.stringify({ ...compData, dataMode: "sandbox", marketDataVerified: false }, null, 2) }]
         };
     });
     // Tool: get_market_overview
-    server.tool("get_market_overview", "Get an overall 24h market activity report on Collector Crypt: total trading volume, total packs opened, top market moving cards (7d gainers), #1 trending pack, and live on-chain platform activity feed.", {}, async () => {
+    server.tool("get_market_overview", "Show hard-coded sample platform activity and market figures. The activity and volume are not live or verified on-chain.", {}, async () => {
         const overview = ccService.getMarketOverview();
         return {
             content: [
                 {
                     type: "text",
-                    text: JSON.stringify(overview, null, 2)
+                    text: JSON.stringify({
+                        ...overview,
+                        dataMode: "sandbox",
+                        marketDataVerified: false,
+                        livePlatformActivityFeed: overview.livePlatformActivityFeed.map(event => ({
+                            ...event,
+                            verifiedOnSolana: false
+                        }))
+                    }, null, 2)
                 }
             ]
         };

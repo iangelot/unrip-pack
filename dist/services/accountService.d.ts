@@ -13,14 +13,6 @@ export declare class AccountService {
      */
     validateSolanaAddress(address: string): boolean;
     /**
-     * Create a new non-custodial PayBox Agent Wallet on Solana
-     */
-    createAgentWallet(): {
-        account: UserAccount;
-        secretKeyBase58: string;
-        message: string;
-    };
-    /**
      * Link or change the connected wallet address
      * @param isVerifiedOwner Whether the connection was authenticated via cryptographic signature (SIWS) or passkey
      */
@@ -58,6 +50,12 @@ export declare class AccountService {
         requiresPasskeyPrompt: boolean;
         errorReason?: string;
     };
+    /** Apply configured spending limits without relying on a possibly stale cached RPC balance. */
+    verifySpendLimits(amountUsd: number): {
+        allowed: boolean;
+        requiresPasskeyPrompt: boolean;
+        errorReason?: string;
+    };
     /**
      * Record expenditure against daily cap
      */
@@ -69,7 +67,7 @@ export declare class AccountService {
     /**
      * Get pack history with optional pagination
      */
-    getPackHistory(limit?: number): {
+    getPackHistory(limit?: number, address?: string): {
         totalOpened: number;
         history: OpenedPackRecord[];
     };

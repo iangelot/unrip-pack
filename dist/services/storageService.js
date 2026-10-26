@@ -31,7 +31,15 @@ export class StorageService {
                 const raw = fs.readFileSync(this.dataFilePath, "utf-8");
                 const parsed = JSON.parse(raw);
                 console.log(`[StorageService] Loaded persistent state from ${this.dataFilePath}`);
-                return parsed;
+                // Legacy versions stored these histories globally. Discard those rows
+                // instead of attributing one wallet's activity to every connected user.
+                return {
+                    accounts: parsed.accounts || {},
+                    userCardPortfolios: parsed.userCardPortfolios || {},
+                    packHistory: Array.isArray(parsed.packHistory) ? {} : (parsed.packHistory || {}),
+                    transactionHistory: Array.isArray(parsed.transactionHistory) ? {} : (parsed.transactionHistory || {}),
+                    lastUpdated: parsed.lastUpdated || new Date().toISOString()
+                };
             }
         }
         catch (err) {
@@ -40,8 +48,8 @@ export class StorageService {
         return {
             accounts: {},
             userCardPortfolios: {},
-            packHistory: [],
-            transactionHistory: [],
+            packHistory: {},
+            transactionHistory: {},
             lastUpdated: new Date().toISOString()
         };
     }
@@ -84,19 +92,19 @@ export class StorageService {
         this.scheduleSave();
     }
     // Pack history
-    getPackHistory() {
-        return this.data.packHistory || [];
+    getPackHistory(address) {
+        return this.data.packHistory[address] || [];
     }
-    savePackHistory(history) {
-        this.data.packHistory = history;
+    savePackHistory(address, history) {
+        this.data.packHistory[address] = history;
         this.scheduleSave();
     }
     // Transaction history
-    getTransactionHistory() {
-        return this.data.transactionHistory || [];
+    getTransactionHistory(address) {
+        return this.data.transactionHistory[address] || [];
     }
-    saveTransactionHistory(history) {
-        this.data.transactionHistory = history;
+    saveTransactionHistory(address, history) {
+        this.data.transactionHistory[address] = history;
         this.scheduleSave();
     }
 }

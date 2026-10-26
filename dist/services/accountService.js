@@ -1,5 +1,4 @@
-import { PublicKey, Keypair } from "@solana/web3.js";
-import bs58 from "bs58";
+import { PublicKey } from "@solana/web3.js";
 import { StorageService } from "./storageService.js";
 export class AccountService {
     activeAccount;
@@ -10,87 +9,26 @@ export class AccountService {
     storage = StorageService.getInstance();
     constructor(solanaService) {
         this.solanaService = solanaService;
-        // Load or initialize default pre-connected wallet session
-        const defaultAddress = "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU";
-        const savedAccount = this.storage.getAccount(defaultAddress);
-        if (savedAccount) {
-            this.activeAccount = savedAccount;
-        }
-        else {
-            this.activeAccount = {
-                walletAddress: defaultAddress,
-                connectedVia: "PayBox MPC Vault",
-                isConnected: true,
-                balances: {
-                    sol: 1.85,
-                    usdc: 340.50,
-                    cards: 12500
-                },
-                spendLimits: {
-                    perTransactionCapUsd: 100,
-                    dailySpendCapUsd: 500,
-                    dailySpentSoFarUsd: 35,
-                    requiresPasskeyAboveUsd: 50
-                },
-                isVerifiedOwner: true,
-                createdAt: new Date(Date.now() - 86400000 * 7).toISOString(),
-                lastActive: new Date().toISOString()
-            };
-            this.storage.saveAccount(this.activeAccount);
-        }
-        // Load or initialize pack opening history
-        const savedPacks = this.storage.getPackHistory();
-        if (savedPacks && savedPacks.length > 0) {
-            this.packHistory = savedPacks;
-        }
-        else {
-            this.packHistory = [{
-                    id: "pack-open-hist-1",
-                    packId: "pack-modern-heat",
-                    packTitle: "Modern Alt-Art & Special Illustration Pack",
-                    openedAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-                    paidAmount: 35,
-                    paidCurrency: "USDC",
-                    isProfit: true,
-                    netPnlUsdc: 415,
-                    txSignature: "5KtPn8Y4zH1m...mock...tx1",
-                    cardPulled: {
-                        id: "cc-pkmn-003",
-                        name: "Gengar VMAX Alternate Art Secret Rare #271",
-                        category: "Pokemon",
-                        set: "Fusion Strike",
-                        year: 2021,
-                        gradingCompany: "BGS",
-                        grade: "9.5 Gem Mint",
-                        certNumber: "001429910",
-                        estimatedValueUsdc: 450,
-                        floorPriceUsdc: 420,
-                        vaultLocation: "PWCC Vault (Oregon, USA)",
-                        nftMint: "GengarVMAXAlt111111111111111111111111111111",
-                        imageUrl: "https://collectorcrypt.com/assets/cards/gengar_vmax.jpg",
-                        isAvailableForTrade: true,
-                        acquiredDate: new Date(Date.now() - 86400000 * 2).toISOString()
-                    }
-                }];
-            this.storage.savePackHistory(this.packHistory);
-        }
-        // Load or initialize transaction history
-        const savedTxs = this.storage.getTransactionHistory();
-        if (savedTxs && savedTxs.length > 0) {
-            this.transactionHistory = savedTxs;
-        }
-        else {
-            this.transactionHistory = [{
-                    signature: "5KtPn8Y4zH1m...mock...tx1",
-                    type: "PACK_OPEN",
-                    status: "finalized",
-                    timestamp: new Date(Date.now() - 86400000 * 2).toISOString(),
-                    description: "Opened 1x Modern Alt-Art Pack for 35 USDC (Pulled PSA 9.5 Gengar VMAX)",
-                    amountUsd: 35,
-                    solanaExplorerUrl: "https://solscan.io/tx/5KtPn8Y4zH1m...mock...tx1"
-                }];
-            this.storage.saveTransactionHistory(this.transactionHistory);
-        }
+        const now = new Date().toISOString();
+        // A new MCP session starts disconnected and empty. Never seed wallet funds
+        // or a sample pack/transaction into a user's portfolio.
+        this.activeAccount = {
+            walletAddress: "",
+            connectedVia: "Default Agent Session",
+            isConnected: false,
+            balances: { sol: 0, usdc: 0, cards: 0 },
+            spendLimits: {
+                perTransactionCapUsd: 100,
+                dailySpendCapUsd: 500,
+                dailySpentSoFarUsd: 0,
+                requiresPasskeyAboveUsd: 50
+            },
+            isVerifiedOwner: false,
+            createdAt: now,
+            lastActive: now
+        };
+        this.packHistory = [];
+        this.transactionHistory = [];
     }
     /**
      * Validate if a string is a valid Solana Base58 public key
@@ -105,50 +43,6 @@ export class AccountService {
         }
     }
     /**
-     * Create a new non-custodial PayBox Agent Wallet on Solana
-     */
-    createAgentWallet() {
-        const keypair = Keypair.generate();
-        const address = keypair.publicKey.toBase58();
-        const secretKeyBase58 = bs58.encode(keypair.secretKey);
-        const newAccount = {
-            walletAddress: address,
-            connectedVia: "PayBox MPC Vault",
-            isConnected: true,
-            balances: {
-                sol: 1.5,
-                usdc: 500.0,
-                cards: 10000
-            },
-            spendLimits: {
-                perTransactionCapUsd: 150,
-                dailySpendCapUsd: 1000,
-                dailySpentSoFarUsd: 0,
-                requiresPasskeyAboveUsd: 75
-            },
-            isVerifiedOwner: true,
-            createdAt: new Date().toISOString(),
-            lastActive: new Date().toISOString()
-        };
-        this.activeAccount = newAccount;
-        this.storage.saveAccount(newAccount);
-        const txSig = `5gen${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}...sol`;
-        this.recordTransaction({
-            signature: txSig,
-            type: "PACK_BUY",
-            status: "finalized",
-            timestamp: new Date().toISOString(),
-            description: `Created non-custodial PayBox Agent Wallet on Solana: ${address}`,
-            amountUsd: 0,
-            solanaExplorerUrl: `https://solscan.io/account/${address}`
-        });
-        return {
-            account: newAccount,
-            secretKeyBase58,
-            message: `Successfully created and linked new PayBox non-custodial wallet: ${address}. Initial sandbox balances credited (1.5 SOL, 500 USDC, 10,000 CARDS).`
-        };
-    }
-    /**
      * Link or change the connected wallet address
      * @param isVerifiedOwner Whether the connection was authenticated via cryptographic signature (SIWS) or passkey
      */
@@ -157,33 +51,29 @@ export class AccountService {
         if (!this.validateSolanaAddress(trimmed)) {
             throw new Error(`Invalid Solana address "${address}". A valid Solana address must be a base58 string 32-44 characters long.`);
         }
-        // Check if user already has an existing saved account in persistent storage
+        // Keep wallet-specific safety settings, but never reuse cached or simulated
+        // balances as if they were live chain data.
         const existing = this.storage.getAccount(trimmed);
-        if (existing) {
-            this.activeAccount = {
-                ...existing,
-                isVerifiedOwner: isVerifiedOwner || existing.isVerifiedOwner || false,
-                isConnected: true,
-                lastActive: new Date().toISOString()
-            };
-        }
-        else {
-            this.activeAccount = {
-                walletAddress: trimmed,
-                connectedVia: "Solana Native",
-                isConnected: true,
-                isVerifiedOwner,
-                balances: { sol: 0, usdc: 0, cards: 0 },
-                spendLimits: {
+        const now = new Date().toISOString();
+        this.activeAccount = {
+            walletAddress: trimmed,
+            connectedVia: "Solana Native",
+            isConnected: true,
+            isVerifiedOwner,
+            balances: { sol: 0, usdc: 0, cards: 0 },
+            spendLimits: existing?.spendLimits
+                ? { ...existing.spendLimits, dailySpentSoFarUsd: 0 }
+                : {
                     perTransactionCapUsd: 100,
                     dailySpendCapUsd: 500,
                     dailySpentSoFarUsd: 0,
                     requiresPasskeyAboveUsd: 50
                 },
-                createdAt: new Date().toISOString(),
-                lastActive: new Date().toISOString()
-            };
-        }
+            createdAt: existing?.createdAt || now,
+            lastActive: now
+        };
+        this.packHistory = this.storage.getPackHistory(trimmed);
+        this.transactionHistory = this.storage.getTransactionHistory(trimmed);
         // Query live on-chain balances from Solana RPC
         try {
             const live = await this.solanaService.getBalances(trimmed);
@@ -192,7 +82,7 @@ export class AccountService {
             this.activeAccount.balances.cards = live.cards;
         }
         catch {
-            // Keep existing balance if network RPC is unavailable
+            // Leave zero balances if the RPC is unavailable; don't show stale values.
         }
         this.storage.saveAccount(this.activeAccount);
         return this.activeAccount;
@@ -202,8 +92,8 @@ export class AccountService {
      * Blocks money-moving actions if connected in unverified / read-only spectator mode.
      */
     requireVerifiedOwner(actionName) {
-        if (this.activeAccount.isVerifiedOwner === false) {
-            throw new Error(`Security Block: Wallet ${this.activeAccount.walletAddress} is connected in Read-Only Spectator Mode. To ${actionName}, you must prove cryptographic ownership by signing in with Phantom/Solflare or PayBox Passkey at the authorization portal.`);
+        if (this.activeAccount.isVerifiedOwner !== true) {
+            throw new Error(`Security Block: Wallet ${this.activeAccount.walletAddress} is connected in Read-Only Spectator Mode. To ${actionName}, sign in using the wallet challenge on the authorization portal. This proves session ownership only; it does not sign transactions. For transaction signing, connect PayBox's official MCP signer in the same AI client and use the same wallet address.`);
         }
     }
     /**
@@ -230,6 +120,9 @@ export class AccountService {
                 throw new Error(`Invalid Solana address provided: "${explicitAddress}". Must be a base58 string 32-44 characters long.`);
             }
             return explicitAddress.trim();
+        }
+        if (!this.activeAccount.isConnected || !this.activeAccount.walletAddress) {
+            throw new Error("No wallet is connected to this session. Connect a Solana wallet first.");
         }
         return this.activeAccount.walletAddress;
     }
@@ -293,6 +186,20 @@ export class AccountService {
             requiresPasskeyPrompt: amountUsd >= limits.requiresPasskeyAboveUsd
         };
     }
+    /** Apply configured spending limits without relying on a possibly stale cached RPC balance. */
+    verifySpendLimits(amountUsd) {
+        if (!Number.isFinite(amountUsd) || amountUsd <= 0) {
+            return { allowed: false, requiresPasskeyPrompt: false, errorReason: "Invalid transaction amount: Amount must be a positive finite number." };
+        }
+        const limits = this.activeAccount.spendLimits;
+        if (amountUsd > limits.perTransactionCapUsd) {
+            return { allowed: false, requiresPasskeyPrompt: true, errorReason: `Amount of $${amountUsd} USD exceeds your per-transaction spend limit ($${limits.perTransactionCapUsd} USD). Adjust the limit or lower the purchase amount.` };
+        }
+        if (limits.dailySpentSoFarUsd + amountUsd > limits.dailySpendCapUsd) {
+            return { allowed: false, requiresPasskeyPrompt: true, errorReason: `Amount of $${amountUsd} USD would exceed your 24h spend cap ($${limits.dailySpendCapUsd} USD). Currently spent today: $${limits.dailySpentSoFarUsd} USD.` };
+        }
+        return { allowed: true, requiresPasskeyPrompt: amountUsd >= limits.requiresPasskeyAboveUsd };
+    }
     /**
      * Record expenditure against daily cap
      */
@@ -315,17 +222,20 @@ export class AccountService {
             amountUsd: record.paidCurrency === "USDC" ? record.paidAmount : record.paidAmount * 0.0205,
             solanaExplorerUrl: `https://solscan.io/tx/${record.txSignature}`
         });
-        this.storage.savePackHistory(this.packHistory);
-        this.storage.saveTransactionHistory(this.transactionHistory);
+        this.storage.savePackHistory(this.activeAccount.walletAddress, this.packHistory);
+        this.storage.saveTransactionHistory(this.activeAccount.walletAddress, this.transactionHistory);
         this.storage.saveAccount(this.activeAccount);
     }
     /**
      * Get pack history with optional pagination
      */
-    getPackHistory(limit = 10) {
+    getPackHistory(limit = 10, address = this.activeAccount.walletAddress) {
+        const history = address === this.activeAccount.walletAddress
+            ? this.packHistory
+            : this.storage.getPackHistory(address);
         return {
-            totalOpened: this.packHistory.length,
-            history: this.packHistory.slice(0, limit)
+            totalOpened: history.length,
+            history: history.slice(0, limit)
         };
     }
     /**
@@ -333,7 +243,7 @@ export class AccountService {
      */
     recordTransaction(tx) {
         this.transactionHistory.unshift(tx);
-        this.storage.saveTransactionHistory(this.transactionHistory);
+        this.storage.saveTransactionHistory(this.activeAccount.walletAddress, this.transactionHistory);
     }
     /**
      * Get transaction history with pagination

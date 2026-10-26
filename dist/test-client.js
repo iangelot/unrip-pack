@@ -108,11 +108,9 @@ async function testAllFeatures() {
     accountService.creditBalance(bbQuote.instantPayoutUsdc);
     console.log(`Sold "${cardToSell.name}" for instant $${bbQuote.instantPayoutUsdc} USDC.`);
     console.log(`Balance before: $${beforeUsdc} USDC -> Balance after: $${account.balances.usdc} USDC`);
-    // 15. Testing createAgentWallet (1-click non-custodial wallet generation)
-    console.log("\n15. Testing create_agent_wallet (Instant PayBox Agent Wallet):");
-    const newWallet = accountService.createAgentWallet();
-    console.log(`Created Wallet: ${newWallet.account.walletAddress}`);
-    console.log(`Starting Balances: ${newWallet.account.balances.sol} SOL | ${newWallet.account.balances.usdc} USDC`);
+    // 15. Testing wallet authorization note (createAgentWallet removed)
+    console.log("\n15. Testing wallet status (create_agent_wallet intentionally unavailable):");
+    console.log(`Active Wallet: ${account.walletAddress}`);
     // 16. Testing get_transactions (Pagination & history)
     console.log("\n16. Testing get_transactions (Paginated transaction logging):");
     const txHistory = accountService.getTransactionHistory(5);
@@ -138,15 +136,19 @@ async function testAllFeatures() {
     console.log(`24h Platform Trading Volume: $${marketOverview.platformStats24h.totalTradingVolumeUsdc} USDC`);
     console.log(`Live Activity Sample: [${marketOverview.livePlatformActivityFeed[0].timeAgo}] ${marketOverview.livePlatformActivityFeed[0].details}`);
     // 20. Testing transfer_vault_card (NFT Ownership transfer)
-    console.log("\n20. Testing transfer_vault_card (P2P on-chain vault card transfer):");
     const testRecipient = "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM";
     const userCardsBefore = ccService.getUserVaultCards(sampleWallet);
-    const cardToTransfer = userCardsBefore.cards[0];
-    const transferred = ccService.removeCardFromUserCollection(sampleWallet, cardToTransfer.id);
-    ccService.addCardToUserCollection(testRecipient, transferred);
-    const recipientCards = ccService.getUserVaultCards(testRecipient);
-    console.log(`Transferred "${cardToTransfer.name}" to recipient: ${testRecipient}`);
-    console.log(`Recipient card count: ${recipientCards.total} | Owner: ${recipientCards.cards[0]?.ownerAddress}`);
+    const cardToTransfer = userCardsBefore?.cards?.[0];
+    if (cardToTransfer) {
+        const transferred = ccService.removeCardFromUserCollection(sampleWallet, cardToTransfer.id);
+        ccService.addCardToUserCollection(testRecipient, transferred);
+        const recipientCards = ccService.getUserVaultCards(testRecipient);
+        console.log(`Transferred "${cardToTransfer.name}" to recipient: ${testRecipient}`);
+        console.log(`Recipient card count: ${recipientCards.total} | Owner: ${recipientCards.cards[0]?.ownerAddress}`);
+    }
+    else {
+        console.log("No card currently in wallet collection to transfer (already sold in buyback test).");
+    }
     // 21. Testing track_shipment (Armored courier logistics tracking)
     console.log("\n21. Testing track_shipment (Armored courier tracking):");
     const trackingInfo = {

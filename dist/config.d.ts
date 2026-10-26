@@ -11,4 +11,3 @@ export declare const CONFIG: {
     JUPITER_PRICE_API: string;
     JUPITER_QUOTE_API: string;
 };
-

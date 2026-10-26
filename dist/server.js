@@ -22,7 +22,7 @@ export function createCollectorCryptServer(accountServiceInstance) {
         version: "1.0.0"
     });
     // Register all tool suites
-    registerAccountTools(server, accountService, ccService);
+    registerAccountTools(server, accountService, ccService, solanaService);
     registerVaultTools(server, ccService, accountService);
     registerGachaTools(server, ccService, solanaService, accountService);
     registerTokenTools(server, ccService, solanaService, accountService);

@@ -1,32 +1,42 @@
 import { z } from "zod";
-import { PayBoxBridge } from "../services/payboxBridge.js";
-export function registerTokenTools(server, ccService, solanaService, accountService) {
+import { CONFIG } from "../config.js";
+import { JupiterSwapService } from "../services/jupiterSwap.js";
+export function registerTokenTools(server, ccService, solanaService, accountService, jupiterSwapService = new JupiterSwapService()) {
+    // Pending swap transactions map: memo/id -> swap details
+    const pendingSwaps = new Map();
     // Tool 1: get_cards_token_info
-    server.tool("get_cards_token_info", "Get live $CARDS token metrics on Solana, including current price, 24h performance, market cap, circulating supply, and community buyback fund status.", {}, async () => {
+    server.tool("get_cards_token_info", "Get Collector Crypt $CARDS token parameters, mint address, and current configuration on Solana.", {}, async () => {
         const stats = await ccService.getCardsTokenStats();
         return {
             content: [
                 {
                     type: "text",
-                    text: JSON.stringify(stats, null, 2)
+                    text: JSON.stringify({
+                        ...stats,
+                        mintAddress: CONFIG.CARDS_MINT_ADDRESS,
+                        usdcMintAddress: CONFIG.USDC_MINT_ADDRESS,
+                        solanaExplorer: `https://solscan.io/token/${CONFIG.CARDS_MINT_ADDRESS}`,
+                        dexAggregator: "Jupiter Aggregator v6"
+                    }, null, 2)
                 }
             ]
         };
     });
-    // Tool 2: get_user_balances (Does NOT require userAddress)
+    // Tool 2: get_user_balances
     server.tool("get_user_balances", "Retrieve live SOL, USDC, and $CARDS token balances for your connected session wallet or any specified Solana address.", {
         userAddress: z.string().optional().describe("Optional explicit Solana wallet address. Defaults to your connected session wallet.")
     }, async (args) => {
         try {
             const activeAddress = accountService.getActiveAddress(args.userAddress);
-            const account = accountService.getAccount();
+            const balances = await solanaService.getBalances(activeAddress);
             return {
                 content: [
                     {
                         type: "text",
                         text: JSON.stringify({
                             address: activeAddress,
-                            balances: account.balances,
+                            balances,
+                            source: "Solana RPC",
                             solanaExplorerUrl: `https://solscan.io/account/${activeAddress}`
                         }, null, 2)
                     }
@@ -41,18 +51,68 @@ export function registerTokenTools(server, ccService, solanaService, accountServ
             };
         }
     });
-    // Tool 3: execute_token_swap (Direct swap execution with spend limits and slippage protection)
-    server.tool("execute_token_swap", "Execute an instant token swap between USDC and $CARDS on Solana. Checks safety spend caps, applies max 0.5% slippage, updates your account balances, and logs transaction.", {
+    // Tool 3: get_swap_quote (Live Jupiter DEX quote)
+    server.tool("get_swap_quote", "Get a real-time DEX swap quote between USDC and $CARDS (or SOL) via Jupiter Aggregator on Solana. Shows expected output amount, route, and price impact with 0 fees.", {
         direction: z.enum(["BUY_CARDS", "SELL_CARDS"]).describe("'BUY_CARDS' (swap USDC -> CARDS) or 'SELL_CARDS' (swap CARDS -> USDC)"),
-        amount: z.number().positive().describe("Amount of input token to swap (in USDC for BUY, or in CARDS for SELL)"),
-        slippagePercent: z.number().optional().default(0.5).describe("Max allowed slippage (default 0.5%)")
+        amount: z.number().positive().describe("Amount of input token (e.g. 10 USDC or 500 CARDS)"),
+        slippagePercent: z.number().optional().default(0.5).describe("Max allowed slippage percentage (default 0.5%)")
     }, async (args) => {
         try {
-            const tokenStats = await ccService.getCardsTokenStats();
-            const price = tokenStats.priceUsd;
-            const account = accountService.getAccount();
-            const costUsd = args.direction === "BUY_CARDS" ? args.amount : args.amount * price;
-            // Safety limit check
+            const isBuy = args.direction === "BUY_CARDS";
+            const inputMint = isBuy ? CONFIG.USDC_MINT_ADDRESS : CONFIG.CARDS_MINT_ADDRESS;
+            const outputMint = isBuy ? CONFIG.CARDS_MINT_ADDRESS : CONFIG.USDC_MINT_ADDRESS;
+            const amountAtomic = Math.round(args.amount * 1_000_000); // 6 decimals for USDC and CARDS
+            const slippageBps = Math.round((args.slippagePercent ?? 0.5) * 100);
+            const quote = await jupiterSwapService.getQuote({
+                inputMint,
+                outputMint,
+                amountAtomic,
+                slippageBps
+            });
+            const expectedOut = Number(quote.outAmount) / 1_000_000;
+            return {
+                content: [
+                    {
+                        type: "text",
+                        text: JSON.stringify({
+                            status: "QUOTE_RECEIVED",
+                            dex: "Jupiter Aggregator v6",
+                            direction: args.direction,
+                            inputAmount: `${args.amount} ${isBuy ? "USDC" : "CARDS"}`,
+                            expectedOutput: `${expectedOut.toFixed(4)} ${isBuy ? "CARDS" : "USDC"}`,
+                            minimumOutput: (Number(quote.otherAmountThreshold) / 1_000_000).toFixed(4),
+                            priceImpactPct: `${quote.priceImpactPct}%`,
+                            slippageBps,
+                            routePlanCount: quote.routePlan?.length ?? 1
+                        }, null, 2)
+                    }
+                ]
+            };
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            return {
+                content: [{ type: "text", text: `Failed to fetch Jupiter swap quote: ${msg}` }],
+                isError: true
+            };
+        }
+    });
+    // Tool 4: prepare_swap_cards (Prepares real Jupiter Solana swap transaction)
+    server.tool("prepare_swap_cards", "Prepare a real Solana DEX swap transaction between USDC and $CARDS using Jupiter Aggregator. Returns an unsigned base64 Solana transaction for wallet approval.", {
+        direction: z.enum(["BUY_CARDS", "SELL_CARDS"]).describe("'BUY_CARDS' (swap USDC -> CARDS) or 'SELL_CARDS' (swap CARDS -> USDC)"),
+        amount: z.number().positive().describe("Amount of input token to swap"),
+        slippagePercent: z.number().optional().default(0.5).describe("Max allowed slippage percentage (default: 0.5%)"),
+        userAddress: z.string().optional().describe("Optional explicit Solana wallet address. Defaults to connected session wallet.")
+    }, async (args) => {
+        try {
+            const activeAddress = accountService.getActiveAddress(args.userAddress);
+            const isBuy = args.direction === "BUY_CARDS";
+            const inputMint = isBuy ? CONFIG.USDC_MINT_ADDRESS : CONFIG.CARDS_MINT_ADDRESS;
+            const outputMint = isBuy ? CONFIG.CARDS_MINT_ADDRESS : CONFIG.USDC_MINT_ADDRESS;
+            const amountAtomic = Math.round(args.amount * 1_000_000);
+            const slippageBps = Math.round((args.slippagePercent ?? 0.5) * 100);
+            // Spend safety check
+            const costUsd = isBuy ? args.amount : args.amount * 0.0205;
             const safetyCheck = accountService.verifySpendSafety(costUsd);
             if (!safetyCheck.allowed) {
                 return {
@@ -60,88 +120,168 @@ export function registerTokenTools(server, ccService, solanaService, accountServ
                     isError: true
                 };
             }
-            let outputAmount = 0;
-            if (args.direction === "BUY_CARDS") {
-                if (account.balances.usdc < args.amount) {
-                    return {
-                        content: [{ type: "text", text: `Insufficient funds: You have $${account.balances.usdc} USDC, but tried to swap $${args.amount} USDC.` }],
-                        isError: true
-                    };
-                }
-                outputAmount = Math.round(args.amount / price);
-                account.balances.usdc -= args.amount;
-                account.balances.cards += outputAmount;
-            }
-            else {
-                if (account.balances.cards < args.amount) {
-                    return {
-                        content: [{ type: "text", text: `Insufficient funds: You have ${account.balances.cards} CARDS, but tried to swap ${args.amount} CARDS.` }],
-                        isError: true
-                    };
-                }
-                outputAmount = Number((args.amount * price).toFixed(2));
-                account.balances.cards -= args.amount;
-                account.balances.usdc += outputAmount;
-            }
-            accountService.recordSpend(costUsd);
-            const txSig = `5swp${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}...sol`;
-            accountService.recordTransaction({
-                signature: txSig,
-                type: "SWAP",
-                status: "finalized",
-                timestamp: new Date().toISOString(),
-                description: `Swapped ${args.amount} ${args.direction === "BUY_CARDS" ? "USDC" : "CARDS"} for ~${outputAmount} ${args.direction === "BUY_CARDS" ? "CARDS" : "USDC"}`,
-                amountUsd: costUsd,
-                solanaExplorerUrl: `https://solscan.io/tx/${txSig}`
+            const quote = await jupiterSwapService.getQuote({
+                inputMint,
+                outputMint,
+                amountAtomic,
+                slippageBps
             });
-            const receipt = {
-                status: "SWAP_SUCCESSFUL",
+            const swapResult = await jupiterSwapService.createSwapTransaction({
+                quoteResponse: quote,
+                userPublicKey: activeAddress
+            });
+            const swapId = `swap_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+            pendingSwaps.set(swapId, {
+                walletAddress: activeAddress,
+                unsignedTransaction: swapResult.swapTransaction,
                 direction: args.direction,
-                inputSwapped: `${args.amount} ${args.direction === "BUY_CARDS" ? "USDC" : "CARDS"}`,
-                outputReceived: `~${outputAmount} ${args.direction === "BUY_CARDS" ? "CARDS" : "USDC"}`,
-                effectivePrice: `$${price} per CARDS`,
-                slippageEnforced: `${args.slippagePercent}%`,
-                newBalances: account.balances,
-                solanaTxSignature: txSig,
-                solanaExplorerUrl: `https://solscan.io/tx/${txSig}`
-            };
+                amount: args.amount,
+                createdAt: Date.now()
+            });
+            const expectedOut = Number(quote.outAmount) / 1_000_000;
             return {
-                content: [{ type: "text", text: JSON.stringify(receipt, null, 2) }]
+                content: [
+                    {
+                        type: "text",
+                        text: JSON.stringify({
+                            status: "AWAITING_WALLET_SIGNATURE",
+                            swapId,
+                            network: "Solana mainnet",
+                            aggregator: "Jupiter Aggregator v6",
+                            direction: args.direction,
+                            inputAmount: `${args.amount} ${isBuy ? "USDC" : "CARDS"}`,
+                            estimatedOutput: `${expectedOut.toFixed(4)} ${isBuy ? "CARDS" : "USDC"}`,
+                            walletAddress: activeAddress,
+                            unsignedTransactionBase64: swapResult.swapTransaction,
+                            nextStep: "Sign this transaction with your connected Solana wallet, then pass the signed base64 transaction to `submit_token_swap`."
+                        }, null, 2)
+                    }
+                ]
             };
         }
         catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             return {
-                content: [{ type: "text", text: `Error executing swap: ${msg}` }],
+                content: [{ type: "text", text: `Failed to prepare swap transaction: ${msg}` }],
                 isError: true
             };
         }
     });
-    // Tool 4: prepare_swap_cards (For PayBox custom sign requests)
-    server.tool("prepare_swap_cards", "Prepare a token swap between USDC and $CARDS on Solana, formatted for execution via PayBox's `request_swap` tool.", {
-        direction: z.enum(["BUY_CARDS", "SELL_CARDS"]).describe("'BUY_CARDS' (swap USDC -> CARDS) or 'SELL_CARDS' (swap CARDS -> USDC)"),
-        amount: z.number().positive().describe("Amount of input token to swap (in USDC for BUY, or in CARDS for SELL)"),
-        userAddress: z.string().optional().describe("Optional explicit Solana wallet address. Defaults to connected session wallet.")
+    // Tool 5: submit_token_swap (Broadcasts signed swap transaction to Solana RPC)
+    server.tool("submit_token_swap", "Submit a signed Jupiter DEX swap transaction directly to the Solana network.", {
+        signedTransactionBase64: z.string().describe("Base64 encoded signed Solana VersionedTransaction"),
+        swapId: z.string().optional().describe("Optional swapId returned from prepare_swap_cards")
     }, async (args) => {
-        const activeAddress = accountService.getActiveAddress(args.userAddress);
-        const tokenStats = await ccService.getCardsTokenStats();
-        const price = tokenStats.priceUsd;
-        let estimatedOutput = 0;
-        if (args.direction === "BUY_CARDS") {
-            estimatedOutput = Math.round(args.amount / price);
+        try {
+            const txSig = await solanaService.sendRawTransaction(args.signedTransactionBase64);
+            if (args.swapId && pendingSwaps.has(args.swapId)) {
+                const swap = pendingSwaps.get(args.swapId);
+                accountService.recordTransaction({
+                    signature: txSig,
+                    type: "SWAP",
+                    status: "confirmed",
+                    timestamp: new Date().toISOString(),
+                    description: `Jupiter DEX Swap: ${swap.direction} (${swap.amount})`,
+                    amountUsd: swap.amount,
+                    solanaExplorerUrl: `https://solscan.io/tx/${txSig}`
+                });
+                pendingSwaps.delete(args.swapId);
+            }
+            return {
+                content: [
+                    {
+                        type: "text",
+                        text: JSON.stringify({
+                            status: "SUBMITTED",
+                            signature: txSig,
+                            solanaExplorerUrl: `https://solscan.io/tx/${txSig}`,
+                            message: "Swap transaction submitted to Solana. Balance updates will reflect upon block confirmation."
+                        }, null, 2)
+                    }
+                ]
+            };
         }
-        else {
-            estimatedOutput = Number((args.amount * price).toFixed(2));
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            return {
+                content: [{ type: "text", text: `Failed to broadcast swap transaction to Solana: ${msg}` }],
+                isError: true
+            };
         }
-        const payload = PayBoxBridge.formatSwapCardsPayload({
-            userAddress: activeAddress,
-            direction: args.direction,
-            inputAmount: args.amount,
-            estimatedOutput
-        });
-        return {
-            content: [{ type: "text", text: JSON.stringify(payload, null, 2) }]
-        };
+    });
+    // Tool 6: execute_token_swap (Direct execution if AGENT_PRIVATE_KEY is configured in env)
+    server.tool("execute_token_swap", "Execute an autonomous token swap between USDC and $CARDS on Solana. If AGENT_PRIVATE_KEY or SOLANA_PRIVATE_KEY is configured in environment, it signs and submits autonomously in one step.", {
+        direction: z.enum(["BUY_CARDS", "SELL_CARDS"]).describe("'BUY_CARDS' (swap USDC -> CARDS) or 'SELL_CARDS' (swap CARDS -> USDC)"),
+        amount: z.number().positive().describe("Amount of input token to swap"),
+        slippagePercent: z.number().optional().default(0.5).describe("Max allowed slippage (default 0.5%)")
+    }, async (args) => {
+        const privateKey = (process.env.AGENT_PRIVATE_KEY || process.env.SOLANA_PRIVATE_KEY || "").trim();
+        if (!privateKey) {
+            return {
+                content: [{
+                        type: "text",
+                        text: JSON.stringify({
+                            status: "AUTONOMOUS_SIGNING_NOT_CONFIGURED",
+                            message: "No AGENT_PRIVATE_KEY or SOLANA_PRIVATE_KEY is set in environment. Use `prepare_swap_cards` to generate the unsigned transaction, sign with your wallet, and submit via `submit_token_swap`.",
+                            alternative: "Call prepare_swap_cards instead."
+                        }, null, 2)
+                    }],
+                isError: false
+            };
+        }
+        try {
+            const account = accountService.getAccount();
+            const activeAddress = account.walletAddress;
+            const isBuy = args.direction === "BUY_CARDS";
+            const inputMint = isBuy ? CONFIG.USDC_MINT_ADDRESS : CONFIG.CARDS_MINT_ADDRESS;
+            const outputMint = isBuy ? CONFIG.CARDS_MINT_ADDRESS : CONFIG.USDC_MINT_ADDRESS;
+            const amountAtomic = Math.round(args.amount * 1_000_000);
+            const slippageBps = Math.round((args.slippagePercent ?? 0.5) * 100);
+            const quote = await jupiterSwapService.getQuote({
+                inputMint,
+                outputMint,
+                amountAtomic,
+                slippageBps
+            });
+            const swapResult = await jupiterSwapService.createSwapTransaction({
+                quoteResponse: quote,
+                userPublicKey: activeAddress
+            });
+            // Sign locally with configured agent key
+            const signedTx = solanaService.signTransactionLocally(swapResult.swapTransaction, privateKey);
+            const txSig = await solanaService.sendRawTransaction(signedTx);
+            accountService.recordTransaction({
+                signature: txSig,
+                type: "SWAP",
+                status: "confirmed",
+                timestamp: new Date().toISOString(),
+                description: `Autonomous Jupiter DEX Swap: ${args.direction} (${args.amount})`,
+                amountUsd: args.amount,
+                solanaExplorerUrl: `https://solscan.io/tx/${txSig}`
+            });
+            return {
+                content: [
+                    {
+                        type: "text",
+                        text: JSON.stringify({
+                            status: "SWAP_EXECUTED",
+                            signature: txSig,
+                            direction: args.direction,
+                            inputAmount: `${args.amount} ${isBuy ? "USDC" : "CARDS"}`,
+                            expectedOutput: `${(Number(quote.outAmount) / 1_000_000).toFixed(4)} ${isBuy ? "CARDS" : "USDC"}`,
+                            solanaExplorerUrl: `https://solscan.io/tx/${txSig}`
+                        }, null, 2)
+                    }
+                ]
+            };
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            return {
+                content: [{ type: "text", text: `Error executing autonomous swap: ${msg}` }],
+                isError: true
+            };
+        }
     });
 }
 //# sourceMappingURL=tokenTools.js.map

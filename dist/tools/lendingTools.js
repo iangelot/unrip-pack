@@ -1,8 +1,9 @@
 import { z } from "zod";
 import { CONFIG } from "../config.js";
+import { hasLiveSettlement, liveSettlementUnavailable } from "../services/liveSettlement.js";
 export function registerLendingTools(server, ccService, accountService) {
     // Tool: get_lending_terms
-    server.tool("get_lending_terms", "Calculate DeFi collateralized loan terms for a tokenized card NFT. Returns maximum borrowable USDC, LTV percentage, APR, and liquidation threshold without selling the physical card.", {
+    server.tool("get_lending_terms", "Calculate a sandbox loan estimate only. No lending pool, collateral escrow, or loan settlement is integrated.", {
         cardId: z.string().describe("The card ID (e.g. 'cc-pkmn-001') or NFT mint address")
     }, async (args) => {
         const card = ccService.getCardById(args.cardId);
@@ -31,7 +32,7 @@ export function registerLendingTools(server, ccService, accountService) {
             protocolFeeUsdc: 10
         };
         return {
-            content: [{ type: "text", text: JSON.stringify(terms, null, 2) }]
+            content: [{ type: "text", text: JSON.stringify({ ...terms, dataMode: "sandbox", lendingAvailable: false }, null, 2) }]
         };
     });
     // Tool: prepare_card_loan
@@ -41,6 +42,8 @@ export function registerLendingTools(server, ccService, accountService) {
         loanDurationDays: z.enum(["30", "60", "90", "180"]).describe("Duration of the loan in days"),
         userAddress: z.string().optional().describe("Optional explicit Solana wallet address. Defaults to connected session wallet.")
     }, async (args) => {
+        if (!hasLiveSettlement())
+            return liveSettlementUnavailable("prepare_card_loan");
         const activeAddress = accountService.getActiveAddress(args.userAddress);
         const card = ccService.getCardById(args.cardId);
         if (!card) {
@@ -93,6 +96,8 @@ export function registerLendingTools(server, ccService, accountService) {
         loanDurationDays: z.enum(["30", "60", "90", "180"]).describe("Duration of the loan in days"),
         userAddress: z.string().optional().describe("Optional explicit Solana wallet address. Defaults to connected session wallet.")
     }, async (args) => {
+        if (!hasLiveSettlement())
+            return liveSettlementUnavailable("execute_card_loan");
         try {
             const activeAddress = accountService.getActiveAddress(args.userAddress);
             // Security Check: Verify cryptographic ownership

@@ -3,6 +3,27 @@ export declare class SolanaService {
     private connection;
     constructor(connection?: Connection);
     getConnection(): Connection;
+    /**
+     * Return standard token NFTs whose token accounts are currently owned by
+     * this address. Both the wallet token account and mint supply/decimals are
+     * checked on Solana RPC; metadata names are not fetched from off-chain URLs.
+     */
+    getOwnedNftMints(ownerAddress: string): Promise<{
+        owner: string;
+        source: "Solana RPC";
+        coverage: "standard_token_nfts_only";
+        compressedNftsIncluded: false;
+        nfts: Array<{
+            mint: string;
+            tokenAccount: string;
+            tokenProgram: string;
+            metadata: {
+                name: string;
+                symbol: string;
+                uri: string;
+            } | null;
+        }>;
+    }>;
     /** Check a transaction signature against Solana RPC, independent of local history. */
     getOnChainSignatureStatus(signature: string): Promise<{
         signature: string;
@@ -28,4 +49,12 @@ export declare class SolanaService {
         serializedBase64: string;
         recentBlockhash: string;
     }>;
+    /**
+     * Broadcast a signed base64 Solana transaction to the network
+     */
+    sendRawTransaction(signedBase64: string): Promise<string>;
+    /**
+     * Sign an unsigned base64 Solana transaction with an authorized Keypair
+     */
+    signTransactionLocally(unsignedBase64: string, privateKeyBase58: string): string;
 }

@@ -263,33 +263,11 @@ export class CollectorCryptService {
      */
     getUserVaultCards(userAddress, limit = 10, offset = 0) {
         if (!this.userCardPortfolios.has(userAddress)) {
-            // First try to load from persistent storage
-            const persisted = this.storage.getUserCards(userAddress);
-            if (persisted && persisted.length > 0) {
-                this.userCardPortfolios.set(userAddress, persisted);
-            }
-            else {
-                // Initialize with default starter card for connected wallet
-                const starterCard = {
-                    id: "cc-pkmn-003",
-                    name: "Gengar VMAX Alternate Art Secret Rare #271",
-                    category: "Pokemon",
-                    set: "Fusion Strike",
-                    year: 2021,
-                    gradingCompany: "BGS",
-                    grade: "9.5 Gem Mint",
-                    certNumber: "001429910",
-                    estimatedValueUsdc: 450,
-                    floorPriceUsdc: 420,
-                    vaultLocation: "PWCC Vault (Oregon, USA)",
-                    nftMint: "GengarVMAXAlt111111111111111111111111111111",
-                    ownerAddress: userAddress,
-                    imageUrl: "https://collectorcrypt.com/assets/cards/gengar_vmax.jpg",
-                    isAvailableForTrade: true,
-                    acquiredDate: new Date(Date.now() - 86400000 * 2).toISOString()
-                };
-                this.userCardPortfolios.set(userAddress, [starterCard]);
-                this.storage.saveUserCards(userAddress, [starterCard]);
+            // This service has no on-chain NFT indexer. Older saved portfolios came
+            // from local simulations, so do not present them as wallet-owned cards.
+            this.userCardPortfolios.set(userAddress, []);
+            if (this.storage.getUserCards(userAddress)?.length) {
+                this.storage.saveUserCards(userAddress, []);
             }
         }
         const cards = this.userCardPortfolios.get(userAddress);
@@ -307,8 +285,11 @@ export class CollectorCryptService {
      */
     addCardToUserCollection(userAddress, card) {
         if (!this.userCardPortfolios.has(userAddress)) {
-            const persisted = this.storage.getUserCards(userAddress);
-            this.userCardPortfolios.set(userAddress, persisted || []);
+            // Do not revive portfolios persisted by the old demo implementation.
+            this.userCardPortfolios.set(userAddress, []);
+            if (this.storage.getUserCards(userAddress)?.length) {
+                this.storage.saveUserCards(userAddress, []);
+            }
         }
         const collection = this.userCardPortfolios.get(userAddress);
         card.ownerAddress = userAddress;
@@ -321,8 +302,10 @@ export class CollectorCryptService {
      */
     removeCardFromUserCollection(userAddress, cardId) {
         if (!this.userCardPortfolios.has(userAddress)) {
-            const persisted = this.storage.getUserCards(userAddress);
-            this.userCardPortfolios.set(userAddress, persisted || []);
+            this.userCardPortfolios.set(userAddress, []);
+            if (this.storage.getUserCards(userAddress)?.length) {
+                this.storage.saveUserCards(userAddress, []);
+            }
         }
         const collection = this.userCardPortfolios.get(userAddress) || [];
         const index = collection.findIndex(c => c.id === cardId || c.nftMint === cardId);

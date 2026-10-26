@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { hasLiveSettlement, liveSettlementUnavailable } from "../services/liveSettlement.js";
 export function registerAccountTools(server, accountService, ccService, solanaService) {
     // Tool 1: get_account
     server.tool("get_account", "Get the connected wallet address, current Solana RPC balances, spend settings, and connection status.", {}, async () => {
@@ -57,15 +56,26 @@ export function registerAccountTools(server, accountService, ccService, solanaSe
         }
     });
     // Tool 3: get_portfolio_summary
-    server.tool("get_portfolio_summary", "Retrieve token balances from Solana RPC. Local sandbox cards, estimated card values, and simulated pack PnL are excluded because they are not verified wallet assets.", {
+    server.tool("get_portfolio_summary", "Retrieve Solana RPC token balances and standard NFT mints currently held by a wallet. Compressed NFTs are not included; local sandbox cards and estimated card values are excluded.", {
         userAddress: z.string().optional().describe("Optional explicit Solana address. Defaults to your connected session wallet.")
     }, async (args) => {
         try {
             const activeAddress = accountService.getActiveAddress(args.userAddress);
             const liveBalances = await solanaService.getBalances(activeAddress);
+            let nftInventory;
+            try {
+                nftInventory = await solanaService.getOwnedNftMints(activeAddress);
+            }
+            catch (error) {
+                nftInventory = {
+                    status: "temporarily_unavailable",
+                    source: "Solana RPC",
+                    reason: error instanceof Error ? error.message : String(error)
+                };
+            }
             const summary = {
                 walletAddress: activeAddress,
-                dataMode: "live_onchain_balances_only",
+                dataMode: "live_onchain_balances_and_standard_nft_mints",
                 tokenBalances: {
                     usdc: liveBalances.usdc,
                     sol: liveBalances.sol,
@@ -74,6 +84,7 @@ export function registerAccountTools(server, accountService, ccService, solanaSe
                 },
                 verifiedUsdValue: null,
                 totalNetWorthUsdc: null,
+                nftInventory,
                 cardCollection: {
                     status: "unavailable",
                     verified: false,
@@ -95,6 +106,19 @@ export function registerAccountTools(server, accountService, ccService, solanaSe
                 content: [{ type: "text", text: `Error: ${msg}` }],
                 isError: true
             };
+        }
+    });
+    server.tool("get_wallet_nft_inventory", "List standard Solana NFTs currently held by a wallet by checking Token and Token-2022 ownership plus mint supply of one and zero decimals on-chain. Includes name, symbol, and metadata URI only when a Metaplex metadata account exists. Compressed NFTs are not included, and no collectible value is inferred.", {
+        userAddress: z.string().optional().describe("Optional Solana wallet address. Defaults to the connected session wallet.")
+    }, async (args) => {
+        try {
+            const address = accountService.getActiveAddress(args.userAddress);
+            const inventory = await solanaService.getOwnedNftMints(address);
+            return { content: [{ type: "text", text: JSON.stringify(inventory, null, 2) }] };
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            return { content: [{ type: "text", text: `Unable to fetch verified NFT inventory: ${msg}` }], isError: true };
         }
     });
     // Tool 4: set_spend_limits
@@ -202,37 +226,14 @@ export function registerAccountTools(server, accountService, ccService, solanaSe
             return { content: [{ type: "text", text: `Solana RPC signature lookup failed: ${message}` }], isError: true };
         }
     });
-    // Tool 6: create_agent_wallet
-    server.tool("create_agent_wallet", "Unavailable: server-generated wallet keys are not safe to expose or manage in this service.", {}, async () => {
-        if (!hasLiveSettlement())
-            return liveSettlementUnavailable("create_agent_wallet");
-        try {
-            const result = accountService.createAgentWallet();
-            return {
-                content: [
-                    {
-                        type: "text",
-                        text: JSON.stringify({
-                            status: "WALLET_CREATED",
-                            message: result.message,
-                            walletAddress: result.account.walletAddress,
-                            connectedVia: result.account.connectedVia,
-                            initialBalances: result.account.balances,
-                            spendLimits: result.account.spendLimits,
-                            securityNote: "Keys are non-custodial and secured in PayBox MPC secure enclaves."
-                        }, null, 2)
-                    }
-                ]
-            };
-        }
-        catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            return {
-                content: [{ type: "text", text: `Error creating wallet: ${msg}` }],
-                isError: true
-            };
-        }
-    });
+    // Wallet creation is intentionally unavailable: this MCP does not generate or custody wallets.
+    server.tool("create_agent_wallet", "Unavailable: connect your own wallet instead. This MCP cannot create, fund, or custody an agent wallet.", {}, async () => ({
+        content: [{
+                type: "text",
+                text: "Unavailable: this MCP does not generate, fund, or custody wallets. Connect a wallet you control through the authorization page."
+            }],
+        isError: true
+    }));
     // Tool 7: get_transactions
     server.tool("get_transactions", "List local sandbox transaction records for the connected wallet. These records are not proof of on-chain transactions. Supports pagination.", {
         limit: z.number().optional().default(10).describe("Number of transactions to return"),

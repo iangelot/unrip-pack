@@ -17,8 +17,8 @@ export declare class StorageService {
     saveAccount(account: UserAccount): void;
     getUserCards(address: string): VaultedCard[] | undefined;
     saveUserCards(address: string, cards: VaultedCard[]): void;
-    getPackHistory(): OpenedPackRecord[];
-    savePackHistory(history: OpenedPackRecord[]): void;
-    getTransactionHistory(): TransactionRecord[];
-    saveTransactionHistory(history: TransactionRecord[]): void;
+    getPackHistory(address: string): OpenedPackRecord[];
+    savePackHistory(address: string, history: OpenedPackRecord[]): void;
+    getTransactionHistory(address: string): TransactionRecord[];
+    saveTransactionHistory(address: string, history: TransactionRecord[]): void;
 }
