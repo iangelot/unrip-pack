@@ -1,4 +1,5 @@
-import { PublicKey } from "@solana/web3.js";
+import { PublicKey, Keypair } from "@solana/web3.js";
+import bs58 from "bs58";
 import {
   UserAccount,
   SpendLimits,
@@ -21,20 +22,36 @@ export class AccountService {
   constructor(solanaService: SolanaService) {
     this.solanaService = solanaService;
     const now = new Date().toISOString();
-    // A new MCP session starts disconnected and empty. Never seed wallet funds
-    // or a sample pack/transaction into a user's portfolio.
+
+    const envKey = (process.env.AGENT_PRIVATE_KEY || process.env.SOLANA_PRIVATE_KEY || "").trim();
+    let initialAddress = "";
+    let isOwner = false;
+    let via: UserAccount["connectedVia"] = "Default Agent Session";
+
+    if (envKey) {
+      try {
+        const secretKey = bs58.decode(envKey);
+        const kp = Keypair.fromSecretKey(secretKey);
+        initialAddress = kp.publicKey.toBase58();
+        isOwner = true;
+        via = "Solana Native";
+      } catch {
+        // Fall back to empty if key format is invalid
+      }
+    }
+
     this.activeAccount = {
-      walletAddress: "",
-      connectedVia: "Default Agent Session",
-      isConnected: false,
+      walletAddress: initialAddress,
+      connectedVia: via,
+      isConnected: !!initialAddress,
       balances: { sol: 0, usdc: 0, cards: 0 },
       spendLimits: {
-        perTransactionCapUsd: 100,
-        dailySpendCapUsd: 500,
+        perTransactionCapUsd: 150,
+        dailySpendCapUsd: 1000,
         dailySpentSoFarUsd: 0,
-        requiresPasskeyAboveUsd: 50
+        requiresPasskeyAboveUsd: 75
       },
-      isVerifiedOwner: false,
+      isVerifiedOwner: isOwner,
       createdAt: now,
       lastActive: now
     };

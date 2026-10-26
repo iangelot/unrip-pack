@@ -14,7 +14,7 @@ export interface JupiterQuoteResponse {
 }
 
 export class JupiterSwapService {
-  private baseUrl = "https://quote-api.jup.ag/v6";
+  private baseUrl = "https://lite-api.jup.ag/swap/v1";
 
   /**
    * Fetch an optimized swap quote between Solana tokens (e.g. USDC and $CARDS)
