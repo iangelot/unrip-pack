@@ -1,64 +1,107 @@
-# Collector Crypt for PayBox (MCP)
+# Collector Crypt & Solana Trading Agent (MCP)
 
-This MCP exposes live Collector Crypt Gacha reads and user-authorized mainnet pack, gift, open, and buyback flows. It uses Collector Crypt's official Gacha API and Solana transactions. The partner API key is optional for standard play endpoints; without it, new memos use the public `cc-` prefix and are not attributed to a partner key.
+This Model Context Protocol (MCP) server provides autonomous AI agents (Claude, Cursor, etc.) with live access to **Collector Crypt Gacha packs**, on-chain **Solana NFT & token portfolio balances**, and real-time **DEX token swaps via Jupiter Aggregator v6**.
 
-## Current status
+It is 100% self-contained—it requires **no secondary MCPs**, no PayBox subscriptions, and no paid API keys.
 
-| Capability | Current behavior |
-| --- | --- |
-| Phantom wallet identity link | Signs a one-time off-chain challenge for login; it does not approve or sign Solana transactions. A separate PayBox transaction signer is required for spending flows. |
-| SOL / SPL balances | Read from Solana RPC for the selected public address. |
-| Standard NFT inventory | Lists Token and Token-2022 mints with wallet balance 1, mint supply 1, zero decimals, and revoked mint authority, verified from Solana RPC. Includes on-chain Metaplex name/symbol/URI when present. Compressed NFTs are not included; collectible value is not inferred. |
-| Portfolio summary | Shows RPC token balances and standard NFT mints. It does not add sandbox cards, guessed prices, or simulated pack PnL to net worth. |
-| Transaction status | Looks up a full base58 signature on the configured Solana RPC; local records are clearly separate and cannot prove settlement. |
-| Gacha machines and recent winners | Read from Collector Crypt's public Gacha API. These are platform API records, not independently verified by this server. |
-| Pack counts and memo status | Read from Collector Crypt's public Gacha API for a wallet or memo. This does not enumerate all NFTs in a wallet. |
-| Local seeded card examples and local history | Sandbox examples only; they are not verified Collector Crypt records or wallet holdings. |
-| Pack purchase, gift, and buyback | Can complete when the same agent client has both MCPs connected: this MCP prepares and validates/submits; PayBox's official MCP must provide a compatible user-approved Solana transaction signature. Without that compatible PayBox signer, these flows are unavailable end to end. |
-| Pack opening and gift claims | Uses Collector Crypt's official memo/challenge APIs; the recipient signs a one-time off-chain claim message. |
-| Marketplace, swaps, loans, card transfers, and physical redemption | Not implemented as live flows in this MCP. |
+---
 
-`get_wallet_nft_inventory` and `get_portfolio_summary` include standard on-chain NFT mints whose wallet balance and mint supply are both one, decimals are zero, and mint authority is revoked. When a Metaplex metadata account exists, its on-chain name, symbol, and URI are included; the server does not fetch the URI. This is not a Collector Crypt card catalog: compressed NFTs are not included, and no card valuation is inferred. `get_user_collection` continues to report Collector Crypt collection details as unavailable and suppresses local sandbox cards until card identity, custody, and valuation can be verified.
+## Capabilities Overview
 
-The sandbox response fields and tool descriptions are intentional. Never treat sandbox values, estimated card prices, or locally recorded activity as assets, payouts, or transaction receipts.
+| Feature | Status | Implementation |
+| :--- | :---: | :--- |
+| **Gacha Machines & Live Odds** | 🟢 **Live** | Reads live machine configs, active stock, prices, and drop odds directly from Collector Crypt (`/api/machines`). |
+| **Pack Purchase** | 🟢 **Live** | Prepares real Solana transactions via Collector Crypt API (`/api/generatePack`). Supports autonomous 1-click execution or wallet signature. |
+| **Pack Opening** | 🟢 **Live** | Opens purchased packs by official memo via Collector Crypt (`/api/openPack`) to assign won collectibles. |
+| **Pack Buybacks (Selling back)** | 🟢 **Live** | Checks real-time buyback eligibility (`/api/buyback/available`) and builds on-chain settlement transactions (`/api/buyback`). |
+| **DEX Token Swaps ($CARDS / USDC / SOL)** | 🟢 **Live** | Real-time quote routing, price impact, and transaction building via **Jupiter Aggregator v6** with 0 protocol fees. |
+| **Wallet Portfolio & Balances** | 🟢 **Live** | Live SOL, USDC, and $CARDS balances via Solana RPC. Scans standard Token & Token-2022 NFTs with Metaplex metadata. |
+| **Autonomous Agent Wallet** | 🟢 **Live** | If `AGENT_PRIVATE_KEY` or `SOLANA_PRIVATE_KEY` is configured in environment, the agent signs and executes swaps and purchases autonomously. |
+| **Web Authorization Portal** | 🟢 **Live** | Built-in OAuth 2.1 & Sign-In with Solana (SIWS) for browser wallets (Phantom, Solflare). |
 
-## Run locally
+---
+
+## Live Endpoints (Render)
+
+The service is deployed on Render:
+* **Streamable HTTP (Claude Connector spec)**: `https://paybox-collectorcrypt-mcp.onrender.com/mcp`
+* **Legacy SSE Endpoint**: `https://paybox-collectorcrypt-mcp.onrender.com/sse`
+* **Health Check**: `https://paybox-collectorcrypt-mcp.onrender.com/health`
+* **Wallet Authorization Portal**: `https://paybox-collectorcrypt-mcp.onrender.com/oauth/authorize`
+
+---
+
+## How to Connect to AI Clients
+
+### 1. Claude Desktop / Cursor (Stdio Mode)
+Add to your `claude_desktop_config.json`:
+```json
+{
+  "mcpServers": {
+    "collector-crypt": {
+      "command": "node",
+      "args": ["<path-to-repo>/dist/index.js"],
+      "env": {
+        "SOLANA_RPC_URL": "https://api.mainnet-beta.solana.com",
+        "AGENT_PRIVATE_KEY": "<optional-base58-solana-private-key>"
+      }
+    }
+  }
+}
+```
+
+### 2. Remote / Web (Claude.ai Custom Connector)
+* **Server URL**: `https://paybox-collectorcrypt-mcp.onrender.com/mcp`
+* **Authentication**: OAuth 2.1 (Auto-discovered via `/.well-known/oauth-authorization-server`)
+
+---
+
+## Key MCP Tools
+
+### Gacha Pack Operations
+* `get_pack_drops`: List active live Gacha machines, current USDC prices, and rarity drop odds.
+* `get_trending_packs`: View recent winning pulls on Collector Crypt.
+* `get_collector_crypt_pack_status`: Check confirmation and reward status of any pack by its memo.
+* `prepare_collector_crypt_pack_purchase`: Reserve a memo and get an unsigned Solana transaction for any live machine.
+* `execute_collector_crypt_pack_purchase`: 1-step autonomous pack purchase (when `AGENT_PRIVATE_KEY` is configured).
+* `open_collector_crypt_pack`: Open a confirmed pack to reveal and mint the won collectible NFT to your wallet.
+* `prepare_collector_crypt_buyback`: Get instant buyback quotes and build the sellback transaction for eligible pack wins.
+* `submit_collector_crypt_transaction`: Submit signed transactions to Collector Crypt's broadcaster.
+
+### Jupiter DEX Token Swaps
+* `get_swap_quote`: Real-time quote for swapping USDC <-> $CARDS (or SOL) with exact output and route.
+* `prepare_swap_cards`: Generate a serialized Solana VersionedTransaction for the swap.
+* `submit_token_swap`: Broadcast a signed swap transaction directly to Solana RPC.
+* `execute_token_swap`: 1-step autonomous swap (when `AGENT_PRIVATE_KEY` is configured).
+
+### Balances & Portfolio
+* `get_user_balances`: Real-time SOL, USDC, and $CARDS balances from Solana RPC.
+* `get_wallet_nft_inventory`: On-chain Token and Token-2022 NFT holdings with Metaplex metadata.
+* `get_portfolio_summary`: Consolidated token and NFT portfolio summary.
+* `update_spend_limits`: Configure safety ceilings ($ per transaction, daily spend caps).
+
+---
+
+## Development & Testing
 
 ```bash
+# Install dependencies
 npm install
+
+# Run TypeScript compilation
 npm run build
-npm run start:http
-```
 
-Copy `.env.example` to `.env` if you want to select a Collector Crypt API environment or provide an RPC endpoint. The default Collector Crypt read API is production; use `https://dev-gacha.collectorcrypt.com` for development data. The standard on-chain Gacha play endpoints work without a partner API key. Leave `COLLECTOR_CRYPT_GACHA_API_KEY` empty unless you later need partner attribution or a partner-only endpoint. Pack prices and Solana transaction fees are separate from API access.
-
-## Live read tools
-
-- `get_pack_drops` reads current machine configuration, prices, odds, and stock from `GET /api/machines`.
-- `get_trending_packs` reads recent winners. Collector Crypt's public endpoint does not provide a verified trending ranking, so the tool does not invent one.
-- `get_pack_wallet_activity` reads purchased and gifted pack counts for an address.
-- `get_wallet_nft_inventory` lists standard Token and Token-2022 NFTs held by an address from Solana RPC.
-- `get_collector_crypt_pack_status` reads a pack's payment, award, and buyback records by memo.
-
-These tools use Collector Crypt's documented public API. Pack history is not the same as wallet NFT ownership; verify NFT holdings against Solana data separately.
-
-## Signing and safety
-
-Money-moving tools require a cryptographically verified wallet session and explicit user confirmation of the live price or payout. This server prepares the official transaction but cannot invoke another MCP server. The same AI client must also have the official PayBox MCP connected; the agent uses PayBox's runtime-discovered signer tool to present the transaction for user review/signing. This server verifies the returned transaction message and wallet signature before submitting to Collector Crypt. Private keys are never handled or stored here.
-
-This MCP does not call other MCP servers or hold a PayBox signing credential. To execute prepared purchases, gifts, or buybacks, connect PayBox's official MCP (`https://api.paybox.sh/mcp`) to the same AI client as this MCP, then use its runtime-discovered `request_wallet_sign` tool if it supports signing the returned Solana transaction. The PayBox credential must be the same address linked and cryptographically verified in this MCP session. Pass the complete signed base64 transaction back to the matching submit tool; this MCP verifies the transaction message and wallet signature before it submits to Collector Crypt. If PayBox reports pending approval, poll the existing request; do not create a duplicate signing request. If the tool cannot sign this transaction format, stop. Never call the legacy `*_sandbox` tools with a real wallet. This MCP does not create, fund, or custody wallets.
-
-Prepared transaction state is short-lived and kept in memory for the active MCP server session. Reconnects or process restarts require preparing a fresh transaction. Do not prepare and sign transactions in one session then submit them through another.
-
-The `COLLECTOR_CRYPT_GACHA_API_KEY` remains optional. Leave it empty for the current standard Gacha flow; no monthly API subscription is needed for that flow. If a key is ever issued for partner attribution or restricted endpoints, it is sent only as `x-api-key` from the server and never returned by an MCP tool.
-
-## Tests
-
-```bash
+# Run Collector Crypt live API tests
 npm run test:collector-api
-npm run test:wallet-auth
-npm run test:wallet-portfolio
+
+# Run component and portfolio integration tests
+npm run test:client
 ```
 
-The Collector Crypt API integration test uses a mocked HTTP client. It verifies request methods, paths, query encoding, headers, request bodies, response validation, and error handling without making purchases or touching a wallet. Other integration checks use local fixtures; they do not submit live transactions.
+---
 
+## Security & Guardrails
+
+1. **Spend Limits**: Built-in enforcement of maximum per-transaction caps and daily limits.
+2. **Key Safety**: Private keys are never exposed in tool responses or logged.
+3. **Transaction Validation**: The server validates that signed transaction messages match prepared transactions before broadcasting.
