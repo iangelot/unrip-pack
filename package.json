@@ -15,7 +15,8 @@
     "test:wallet-portfolio": "npm run build && node tests/wallet-portfolio.integration.mjs",
     "test:collector-api": "npm run build && node tests/collector-crypt-api.integration.mjs",
     "test:wallet-data-integrity": "npm run build && node tests/wallet-data-integrity.integration.mjs",
-    "test:nft-inventory": "npm run build && node tests/nft-inventory.integration.mjs"
+    "test:nft-inventory": "npm run build && node tests/nft-inventory.integration.mjs",
+    "test:security": "npm run build && node tests/security-deep-audit.mjs"
   },
   "engines": {
     "node": ">=20.0.0"

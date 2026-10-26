@@ -98,6 +98,8 @@ export function registerGachaTools(server, ccService, solanaService, accountServ
                 throw new Error(`Price changed: ${args.packType} currently costs ${price} USDC. Confirm that price and try again.`);
             }
             const balance = await solanaService.getBalances(walletAddress);
+            if (balance.sol < 0.002)
+                throw new Error(`Insufficient SOL for network transaction fee: have ${balance.sol.toFixed(4)} SOL, need at least 0.002 SOL.`);
             if (balance.usdc < price)
                 throw new Error(`Insufficient live USDC balance: need ${price}, have ${balance.usdc}.`);
             const spendLimit = accountService.verifySpendLimits(price);
@@ -162,6 +164,8 @@ export function registerGachaTools(server, ccService, solanaService, accountServ
             if (Math.abs(price - args.expectedPriceUsdc) > 0.000001)
                 throw new Error(`Price changed to ${price} USDC. Confirm price and retry.`);
             const balance = await solanaService.getBalances(walletAddress);
+            if (balance.sol < 0.002)
+                throw new Error(`Insufficient SOL for network transaction fee: have ${balance.sol.toFixed(4)} SOL, need at least 0.002 SOL.`);
             if (balance.usdc < price)
                 throw new Error(`Insufficient USDC balance: have ${balance.usdc}, need ${price}.`);
             const spendLimit = accountService.verifySpendLimits(price);
@@ -217,6 +221,8 @@ export function registerGachaTools(server, ccService, solanaService, accountServ
             if (!machine || !Number.isFinite(expected) || Math.abs(expected - args.expectedTotalUsdc) > 0.000001)
                 throw new Error("The public live machine price or gift total does not match the amount the user confirmed.");
             const balance = await solanaService.getBalances(sender);
+            if (balance.sol < 0.002)
+                throw new Error(`Insufficient SOL for network transaction fee: have ${balance.sol.toFixed(4)} SOL, need at least 0.002 SOL.`);
             if (balance.usdc < expected)
                 throw new Error(`Insufficient live USDC balance: need ${expected}, have ${balance.usdc}.`);
             const spendLimit = accountService.verifySpendLimits(expected);
@@ -254,6 +260,8 @@ export function registerGachaTools(server, ccService, solanaService, accountServ
             if (pending.walletAddress !== walletAddress)
                 throw new Error("This prepared transaction belongs to a different verified wallet.");
             verifyWalletSignedTransaction(pending.unsignedTransaction, args.signedTransactionBase64, walletAddress);
+            // Remove from pending immediately to prevent duplicate submissions or replay attacks
+            pendingTransactions.delete(args.memo);
             const submission = await collectorCryptApi.submitTransaction(args.signedTransactionBase64);
             if (submission.success !== true || typeof submission.signature !== "string")
                 throw new Error("Collector Crypt did not confirm transaction submission; no success is reported.");
@@ -265,19 +273,16 @@ export function registerGachaTools(server, ccService, solanaService, accountServ
             if (chain?.status === "failed")
                 throw new Error(`Solana reports the submitted transaction failed: ${JSON.stringify(chain.error)}`);
             const confirmed = chain?.status === "confirmed" || chain?.status === "finalized";
-            if (confirmed)
-                pendingTransactions.delete(args.memo);
-            if (confirmed)
-                accountService.recordTransaction({
-                    signature: submission.signature,
-                    type: pending.action === "buyback" ? "BUYBACK" : "PACK_BUY",
-                    status: chain?.status === "finalized" ? "finalized" : "confirmed",
-                    timestamp: new Date().toISOString(),
-                    description: `${pending.action} submitted for ${pending.memo}${confirmed ? " and confirmed on Solana" : "; awaiting Solana RPC confirmation"}`,
-                    amountUsd: pending.amountUsdc ?? 0,
-                    solanaExplorerUrl: `https://solscan.io/tx/${submission.signature}`
-                });
-            if (confirmed && pending.action !== "buyback" && pending.amountUsdc)
+            accountService.recordTransaction({
+                signature: submission.signature,
+                type: pending.action === "buyback" ? "BUYBACK" : "PACK_BUY",
+                status: chain?.status === "finalized" ? "finalized" : "confirmed",
+                timestamp: new Date().toISOString(),
+                description: `${pending.action} submitted for ${pending.memo}${confirmed ? " and confirmed on Solana" : "; awaiting Solana RPC confirmation"}`,
+                amountUsd: pending.amountUsdc ?? 0,
+                solanaExplorerUrl: `https://solscan.io/tx/${submission.signature}`
+            });
+            if (pending.action !== "buyback" && pending.amountUsdc)
                 accountService.recordSpend(pending.amountUsdc);
             return textResult({ status: confirmed ? "CONFIRMED" : "SUBMITTED_AWAITING_CONFIRMATION", sandbox: false, wallet: walletAddress,
                 memo: pending.memo, action: pending.action, amountUsdc: pending.amountUsdc, signature: submission.signature,
@@ -346,6 +351,8 @@ export function registerGachaTools(server, ccService, solanaService, accountServ
             if (pending.walletAddress !== walletAddress)
                 throw new Error("This buyback was prepared for another wallet.");
             verifyWalletSignedTransaction(pending.unsignedTransaction, args.signedTransactionBase64, walletAddress);
+            // Remove from pending immediately to prevent duplicate submissions or replay attacks
+            pendingTransactions.delete(`buyback:${args.nftAddress}`);
             const submission = await collectorCryptApi.submitTransaction(args.signedTransactionBase64);
             if (submission.success !== true || typeof submission.signature !== "string")
                 throw new Error("Collector Crypt did not confirm buyback transaction submission.");
@@ -357,12 +364,9 @@ export function registerGachaTools(server, ccService, solanaService, accountServ
             if (chain?.status === "failed")
                 throw new Error(`Solana reports the buyback failed: ${JSON.stringify(chain.error)}`);
             const confirmed = chain?.status === "confirmed" || chain?.status === "finalized";
-            if (confirmed)
-                pendingTransactions.delete(`buyback:${args.nftAddress}`);
-            if (confirmed)
-                accountService.recordTransaction({ signature: submission.signature, type: "BUYBACK", status: chain?.status === "finalized" ? "finalized" : "confirmed",
-                    timestamp: new Date().toISOString(), description: `Collector Crypt buyback for ${args.nftAddress}; RPC status ${chain?.status ?? "unavailable"}`,
-                    amountUsd: pending.amountUsdc ?? 0, solanaExplorerUrl: `https://solscan.io/tx/${submission.signature}` });
+            accountService.recordTransaction({ signature: submission.signature, type: "BUYBACK", status: chain?.status === "finalized" ? "finalized" : "confirmed",
+                timestamp: new Date().toISOString(), description: `Collector Crypt buyback for ${args.nftAddress}; RPC status ${chain?.status ?? "unavailable"}`,
+                amountUsd: pending.amountUsdc ?? 0, solanaExplorerUrl: `https://solscan.io/tx/${submission.signature}` });
             return textResult({ status: confirmed ? "CONFIRMED" : "SUBMITTED_AWAITING_CONFIRMATION",
                 sandbox: false, nftAddress: args.nftAddress, payoutUsdc: pending.amountUsdc, signature: submission.signature,
                 solanaRpcStatus: chain?.status ?? "unavailable", explorerUrl: `https://solscan.io/tx/${submission.signature}` });

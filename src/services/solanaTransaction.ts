@@ -32,7 +32,7 @@ export function verifyWalletSignedTransaction(unsignedBase64: string, signedBase
     throw new Error("Could not decode the unsigned and signed Solana transactions.");
   }
   if (!unsigned.message.equals(signed.message)) {
-    throw new Error("Signed transaction does not match the exact Collector Crypt transaction returned for this operation.");
+    throw new Error("Signed transaction does not match the exact prepared transaction for this operation.");
   }
   const owner = new PublicKey(walletAddress);
   const signer = signed.signers.find((entry) => entry.key.equals(owner));
