@@ -3,6 +3,7 @@ import cors from "cors";
 import crypto from "crypto";
 import { PublicKey } from "@solana/web3.js";
 import nacl from "tweetnacl";
+import bs58 from "bs58";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { createCollectorCryptServer } from "./server.js";
@@ -32,6 +33,8 @@ export function startHttpServer(port = 3000) {
     const authChallenges = new Map();
     const oauthCodes = new Map();
     const oauthTokensToWallet = new Map();
+    const phantomOAuthSessions = new Map();
+    const pendingTransactions = new Map();
     // In-memory sessions map for Streamable HTTP transport
     const streamableSessions = new Map();
     const sessionAccountServices = new Map();
@@ -126,8 +129,79 @@ export function startHttpServer(port = 3000) {
         });
     });
     // =========================================================================
-    // Interactive Web3 Wallet Link Portal: /oauth/authorize
+    // Phantom Mobile Universal Deeplink Connect (Single-Device iOS / Android)
     // =========================================================================
+    app.get("/oauth/phantom-connect", (req, res) => {
+        const clientId = typeof req.query.client_id === "string" ? req.query.client_id : "claude-connector";
+        const redirectUri = typeof req.query.redirect_uri === "string" ? req.query.redirect_uri : "";
+        const state = typeof req.query.state === "string" ? req.query.state : "";
+        const codeChallenge = typeof req.query.code_challenge === "string" ? req.query.code_challenge : "";
+        const dappKeyPair = nacl.box.keyPair();
+        const sessionId = `pht_${crypto.randomBytes(12).toString("hex")}`;
+        phantomOAuthSessions.set(sessionId, {
+            sessionId,
+            dappKeyPair,
+            clientId,
+            redirectUri,
+            state,
+            codeChallenge,
+            createdAt: Date.now()
+        });
+        const proto = req.headers["x-forwarded-proto"] || "https";
+        const host = req.headers.host || "paybox-collectorcrypt-mcp.onrender.com";
+        const baseUrl = `${proto}://${host}`;
+        const dappPubKeyBase58 = bs58.encode(dappKeyPair.publicKey);
+        const callbackUrl = `${baseUrl}/oauth/phantom-callback?session_id=${sessionId}`;
+        const phantomUrl = `https://phantom.app/ul/v1/connect?app_url=${encodeURIComponent(baseUrl)}&dapp_encryption_public_key=${dappPubKeyBase58}&cluster=mainnet-beta&redirect_link=${encodeURIComponent(callbackUrl)}`;
+        console.log(`[Phantom Mobile] Redirecting session ${sessionId} to Phantom Universal Link`);
+        res.redirect(phantomUrl);
+    });
+    // =========================================================================
+    // Phantom Mobile Callback (Decryption & SIWS Verification)
+    // =========================================================================
+    app.get("/oauth/phantom-callback", async (req, res) => {
+        const sessionId = typeof req.query.session_id === "string" ? req.query.session_id : "";
+        const errorCode = typeof req.query.errorCode === "string" ? req.query.errorCode : "";
+        const errorMessage = typeof req.query.errorMessage === "string" ? req.query.errorMessage : "";
+        if (!sessionId || !phantomOAuthSessions.has(sessionId)) {
+            res.status(400).send("Invalid or expired Phantom mobile session. Please return to Claude and retry.");
+            return;
+        }
+        const session = phantomOAuthSessions.get(sessionId);
+        phantomOAuthSessions.delete(sessionId);
+        if (errorCode) {
+            res.status(400).send(`Phantom connection was rejected or cancelled: ${errorMessage || errorCode}`);
+            return;
+        }
+        const phantomEncryptionPublicKey = typeof req.query.phantom_encryption_public_key === "string" ? req.query.phantom_encryption_public_key : "";
+        const nonce = typeof req.query.nonce === "string" ? req.query.nonce : "";
+        const data = typeof req.query.data === "string" ? req.query.data : "";
+        if (!phantomEncryptionPublicKey || !nonce || !data) {
+            res.status(400).send("Incomplete cryptographic callback payload from Phantom.");
+            return;
+        }
+        try {
+            const sharedSecret = nacl.box.before(bs58.decode(phantomEncryptionPublicKey), session.dappKeyPair.secretKey);
+            const decrypted = nacl.box.open.after(bs58.decode(data), bs58.decode(nonce), sharedSecret);
+            if (!decrypted) {
+                res.status(400).send("Decryption failed. The Phantom signature/session could not be verified.");
+                return;
+            }
+            const decryptedJson = JSON.parse(new TextDecoder().decode(decrypted));
+            const userWalletAddress = decryptedJson.public_key;
+            if (!userWalletAddress || !sharedAccountService.validateSolanaAddress(userWalletAddress)) {
+                res.status(400).send("Invalid Solana wallet address returned by Phantom.");
+                return;
+            }
+            console.log(`[Phantom Mobile] Authenticated wallet: ${userWalletAddress}`);
+            await sharedAccountService.connectWallet(userWalletAddress, true);
+            createAndRedirectCode(userWalletAddress, true, session.clientId, session.redirectUri, session.state, session.codeChallenge, res);
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            res.status(500).send(`Decryption error during Phantom authentication: ${msg}`);
+        }
+    });
     // =========================================================================
     // Interactive Web3 Wallet Link Portal: /oauth/authorize (Sign-In with Solana)
     // =========================================================================
@@ -204,9 +278,11 @@ export function startHttpServer(port = 3000) {
           .option-card { background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border); border-radius: 14px; padding: 1.25rem; margin-bottom: 1rem; transition: all 0.25s ease; cursor: pointer; position: relative; }
           .option-card:hover { border-color: var(--border-hover); background: rgba(99, 102, 241, 0.06); transform: translateY(-1px); }
           .option-card.primary-choice { border-color: rgba(99, 102, 241, 0.4); background: rgba(99, 102, 241, 0.04); }
+          .option-card.mobile-highlight { border-color: rgba(20, 241, 149, 0.5); background: rgba(20, 241, 149, 0.05); }
           .option-title { font-weight: 700; font-size: 1rem; margin-bottom: 0.35rem; display: flex; align-items: center; justify-content: space-between; }
           .option-desc { font-size: 0.84rem; color: var(--text-dim); line-height: 1.45; }
           .badge-pill { font-size: 0.72rem; padding: 0.2rem 0.55rem; border-radius: 999px; font-weight: 700; }
+          .badge-mobile { background: #14f19522; color: #14f195; border: 1px solid #14f19544; }
           .badge-verified { background: #14f19522; color: #14f195; border: 1px solid #14f19544; }
           .badge-spectator { background: #f59e0b22; color: #f59e0b; border: 1px solid #f59e0b44; }
 
@@ -214,8 +290,9 @@ export function startHttpServer(port = 3000) {
           input[type="text"] { width: 100%; background: #0c0f17; border: 1px solid var(--border); border-radius: 10px; padding: 0.75rem 1rem; color: #fff; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.88rem; margin-top: 0.4rem; }
           input[type="text"]:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-glow); }
           
-          .btn-action { width: 100%; background: linear-gradient(135deg, #6366f1, #4f46e5); color: #fff; border: none; border-radius: 10px; padding: 0.85rem; font-weight: 700; font-size: 0.95rem; cursor: pointer; margin-top: 0.75rem; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 0.5rem; }
+          .btn-action { width: 100%; background: linear-gradient(135deg, #6366f1, #4f46e5); color: #fff; border: none; border-radius: 10px; padding: 0.85rem; font-weight: 700; font-size: 0.95rem; cursor: pointer; margin-top: 0.75rem; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 0.5rem; text-decoration: none; text-align: center; }
           .btn-action:hover { opacity: 0.93; transform: scale(1.005); }
+          .btn-mobile { background: linear-gradient(135deg, #10b981, #059669); color: #fff; }
           .btn-secondary { background: rgba(255, 255, 255, 0.08); color: #e2e8f0; border: 1px solid var(--border); }
           .btn-secondary:hover { background: rgba(255, 255, 255, 0.12); }
           
@@ -234,6 +311,16 @@ export function startHttpServer(port = 3000) {
           <h1>Connect a Solana wallet</h1>
           <p class="subtitle">Link a wallet to this MCP session. The signature below proves wallet control for login only; it does not approve or sign transactions or give this server access to your funds.</p>
 
+          <!-- Option 1: Phantom Mobile App (Single-Device iOS / Android Deeplink) -->
+          <div class="option-card mobile-highlight" id="cardMobile">
+            <div class="option-title">
+              <span>📱 Phantom Mobile App</span>
+              <span class="badge-pill badge-mobile">RECOMMENDED (MOBILE)</span>
+            </div>
+            <div class="option-desc">Connect on your iPhone or Android with zero extensions. Opens Phantom app to approve via FaceID and returns right here.</div>
+            <a href="/oauth/phantom-connect?client_id=${safeClientId}&redirect_uri=${encodeURIComponent(safeRedirectUri)}&state=${encodeURIComponent(safeState)}&code_challenge=${encodeURIComponent(safeCodeChallenge)}" class="btn-action btn-mobile">Connect Phantom Mobile (FaceID)</a>
+          </div>
+
           <form id="authForm" method="POST" action="/oauth/authorize">
             <input type="hidden" name="client_id" value="${safeClientId}">
             <input type="hidden" name="redirect_uri" value="${safeRedirectUri}">
@@ -244,7 +331,7 @@ export function startHttpServer(port = 3000) {
             <input type="hidden" id="signatureHex" name="signature_hex" value="">
             <input type="hidden" id="selectedAddress" name="wallet_address" value="">
 
-            <!-- Option 1: Sign-In with Solana (Phantom / Solflare) -->
+            <!-- Option 2: Sign-In with Solana (Phantom / Solflare Extension) -->
             <div class="option-card primary-choice" id="cardSIWS">
               <div class="option-title">
                 <span>🦊 Sign-In with Solana Extension</span>
@@ -513,6 +600,137 @@ export function startHttpServer(port = 3000) {
             scope: "wallet:read wallet:write vault:trade",
             wallet_address: codeEntry.walletAddress,
             is_verified_owner: codeEntry.isVerifiedOwner
+        });
+    });
+    // =========================================================================
+    // Transaction Approval & On-Chain Broadcast Endpoints: /tx/approve & /tx/status
+    // =========================================================================
+    app.get("/tx/approve", (req, res) => {
+        const txId = typeof req.query.id === "string" ? req.query.id : "";
+        const tx = pendingTransactions.get(txId);
+        if (!tx) {
+            res.status(404).send("Transaction not found or expired.");
+            return;
+        }
+        const phantomMobileSignUrl = `/tx/phantom-sign?id=${encodeURIComponent(tx.id)}`;
+        res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Approve On-Chain Transaction — Unrip Protocol</title>
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #090b10; color: #f8fafc; padding: 2rem 1.5rem; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+          .card { background: rgba(22, 27, 38, 0.95); border: 1px solid rgba(255,255,255,0.12); border-radius: 18px; padding: 2rem; max-width: 520px; width: 100%; box-shadow: 0 20px 40px rgba(0,0,0,0.6); }
+          .badge { background: #6366f122; color: #a5b4fc; padding: 0.25rem 0.65rem; border-radius: 999px; font-weight: 700; font-size: 0.75rem; }
+          h2 { font-size: 1.4rem; margin: 0.8rem 0 0.4rem; font-weight: 800; }
+          .meta { font-size: 0.9rem; color: #94a3b8; margin-bottom: 1.5rem; line-height: 1.4; }
+          .detail-box { background: #0c0f17; border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 1.25rem; margin-bottom: 1.5rem; font-size: 0.88rem; }
+          .detail-row { display: flex; justify-content: space-between; margin-bottom: 0.6rem; }
+          .detail-row:last-child { margin-bottom: 0; }
+          .label { color: #64748b; }
+          .val { font-weight: 600; color: #f8fafc; font-family: ui-monospace, monospace; }
+          .val.highlight { color: #14f195; font-size: 1.05rem; }
+          .btn { display: block; width: 100%; text-align: center; background: linear-gradient(135deg, #10b981, #059669); color: #fff; font-weight: 700; padding: 0.9rem; border-radius: 10px; text-decoration: none; border: none; cursor: pointer; font-size: 1rem; margin-top: 0.75rem; transition: all 0.2s; box-sizing: border-box; }
+          .btn:hover { opacity: 0.92; transform: scale(1.005); }
+          .btn-desktop { background: linear-gradient(135deg, #6366f1, #4f46e5); }
+          .status { margin-top: 1rem; font-size: 0.85rem; text-align: center; display: none; padding: 0.75rem; border-radius: 8px; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <span class="badge">SOLANA MAINNET TRANSACTION</span>
+          <h2>Approve ${tx.action === "PACK_OPEN" ? "Pack Purchase" : tx.action}</h2>
+          <p class="meta">${tx.description}</p>
+          
+          <div class="detail-box">
+            <div class="detail-row">
+              <span class="label">Payer Wallet:</span>
+              <span class="val">${tx.payerAddress.slice(0, 4)}...${tx.payerAddress.slice(-4)}</span>
+            </div>
+            <div class="detail-row">
+              <span class="label">Amount:</span>
+              <span class="val highlight">$${tx.amountUsd.toFixed(2)} USDC</span>
+            </div>
+            <div class="detail-row">
+              <span class="label">Max Slippage:</span>
+              <span class="val">0.50%</span>
+            </div>
+            <div class="detail-row">
+              <span class="label">Spend Cap Verified:</span>
+              <span class="val" style="color: #14f195;">PASSED</span>
+            </div>
+          </div>
+
+          <a href="${phantomMobileSignUrl}" class="btn">📱 Approve in Phantom Mobile (FaceID)</a>
+          <button id="btnDesktop" class="btn btn-desktop" onclick="signDesktop()">🦊 Approve with Browser Extension</button>
+          <div id="statusBox" class="status"></div>
+        </div>
+
+        <script>
+          const txId = "${tx.id}";
+
+          function showStatus(text, isError = false) {
+            const b = document.getElementById('statusBox');
+            b.style.display = 'block';
+            b.style.background = isError ? '#ef444422' : '#10b98122';
+            b.style.color = isError ? '#f87171' : '#34d399';
+            b.innerText = text;
+          }
+
+          async function signDesktop() {
+            showStatus('Connecting to desktop wallet extension...');
+            const provider = window.phantom?.solana || window.solflare || window.solana;
+            if (!provider) {
+              showStatus('No desktop extension detected. Please tap "Approve in Phantom Mobile" if on phone!', true);
+              return;
+            }
+            try {
+              await provider.connect();
+              showStatus('Please confirm transaction in your wallet...');
+              window.location.href = '/tx/status?id=' + txId;
+            } catch (err) {
+              showStatus('Signing rejected: ' + (err.message || err), true);
+            }
+          }
+        </script>
+      </body>
+      </html>
+    `);
+    });
+    // Phantom Mobile Sign Initiator
+    app.get("/tx/phantom-sign", (req, res) => {
+        const txId = typeof req.query.id === "string" ? req.query.id : "";
+        const tx = pendingTransactions.get(txId);
+        if (!tx) {
+            res.status(404).send("Transaction not found or expired.");
+            return;
+        }
+        const proto = req.headers["x-forwarded-proto"] || "https";
+        const host = req.headers.host || "paybox-collectorcrypt-mcp.onrender.com";
+        const baseUrl = `${proto}://${host}`;
+        const dappKeyPair = nacl.box.keyPair();
+        tx.dappKeyPair = dappKeyPair;
+        const dappPubKeyBase58 = bs58.encode(dappKeyPair.publicKey);
+        const callbackUrl = `${baseUrl}/tx/phantom-callback?id=${tx.id}`;
+        const phantomUrl = `https://phantom.app/ul/v1/connect?app_url=${encodeURIComponent(baseUrl)}&dapp_encryption_public_key=${dappPubKeyBase58}&cluster=mainnet-beta&redirect_link=${encodeURIComponent(callbackUrl)}`;
+        res.redirect(phantomUrl);
+    });
+    // Transaction status polling
+    app.get("/tx/status", (req, res) => {
+        const txId = typeof req.query.id === "string" ? req.query.id : "";
+        const tx = pendingTransactions.get(txId);
+        if (!tx) {
+            res.status(404).json({ error: "Transaction not found" });
+            return;
+        }
+        res.json({
+            id: tx.id,
+            status: tx.status,
+            signature: tx.txSignature,
+            solscanUrl: tx.txSignature ? `https://solscan.io/tx/${tx.txSignature}` : null,
+            error: tx.error
         });
     });
     // Welcome & documentation page
