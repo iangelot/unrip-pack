@@ -156,7 +156,7 @@ export function startHttpServer(port: number = 3000) {
   // =========================================================================
   const getDiscoveryMetadata = (req: Request) => {
     const proto = req.headers["x-forwarded-proto"] || "https";
-    const host = req.headers.host || "paybox-collectorcrypt-mcp.onrender.com";
+    const host = req.headers.host || "localhost";
     const baseUrl = `${proto}://${host}`;
 
     return {
@@ -182,7 +182,7 @@ export function startHttpServer(port: number = 3000) {
 
   app.use("/.well-known/oauth-protected-resource", (req: Request, res: Response) => {
     const proto = req.headers["x-forwarded-proto"] || "https";
-    const host = req.headers.host || "paybox-collectorcrypt-mcp.onrender.com";
+    const host = req.headers.host || "localhost";
     const baseUrl = `${proto}://${host}`;
     res.json({
       resource: `${baseUrl}/mcp`,
@@ -242,7 +242,7 @@ export function startHttpServer(port: number = 3000) {
     });
 
     const proto = req.headers["x-forwarded-proto"] || "https";
-    const host = req.headers.host || "paybox-collectorcrypt-mcp.onrender.com";
+    const host = req.headers.host || "localhost";
     const baseUrl = `${proto}://${host}`;
 
     const dappPubKeyBase58 = bs58.encode(dappKeyPair.publicKey);
@@ -353,7 +353,7 @@ export function startHttpServer(port: number = 3000) {
       return;
     }
     const nonce = crypto.randomBytes(16).toString("hex");
-    const domain = req.headers.host || "paybox-collectorcrypt-mcp.onrender.com";
+    const domain = req.headers.host || "localhost";
     const challenge = `Unrip Protocol Authentication\nDomain: ${domain}\nNonce: ${nonce}\nTimestamp: ${new Date().toISOString()}\n\nSign this one-time message to prove control of this wallet for this MCP session. This is off-chain login only; it does not approve or sign Solana transactions.`;
     // Base64 keeps the exact UTF-8 challenge bytes intact across HTML parsing and form submission.
     const challengeBase64 = Buffer.from(challenge, "utf8").toString("base64");
@@ -866,7 +866,7 @@ export function startHttpServer(port: number = 3000) {
     }
 
     const proto = req.headers["x-forwarded-proto"] || "https";
-    const host = req.headers.host || "paybox-collectorcrypt-mcp.onrender.com";
+    const host = req.headers.host || "localhost";
     const baseUrl = `${proto}://${host}`;
 
     const dappKeyPair = nacl.box.keyPair();
@@ -898,7 +898,7 @@ export function startHttpServer(port: number = 3000) {
   // Welcome & documentation page
   app.get("/", (req: Request, res: Response) => {
     const proto = req.headers["x-forwarded-proto"] || "https";
-    const host = req.headers.host || "paybox-collectorcrypt-mcp.onrender.com";
+    const host = req.headers.host || "localhost";
     const baseUrl = `${proto}://${host}`;
 
     res.send(`
@@ -967,7 +967,7 @@ MCP Server URL: ${baseUrl}/mcp
     }
 
     const proto = req.headers["x-forwarded-proto"] || "https";
-    const host = req.headers.host || "paybox-collectorcrypt-mcp.onrender.com";
+    const host = req.headers.host || "localhost";
     const baseUrl = `${proto}://${host}`;
 
     const sessionId = (req.headers["mcp-session-id"] as string) || (req.query.sessionId as string);
