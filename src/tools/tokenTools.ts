@@ -308,21 +308,24 @@ export function registerTokenTools(
   // Tool 6: execute_token_swap (Autonomous execution with spend caps and live balance protection)
   server.tool(
     "execute_token_swap",
-    "Execute an autonomous token swap between USDC and $CARDS on Solana. If AGENT_PRIVATE_KEY or SOLANA_PRIVATE_KEY is configured in environment, it signs and submits autonomously in one step.",
+    "Execute a token swap between USDC and $CARDS. Autonomous signing is disabled unless ENABLE_AUTONOMOUS_SIGNING=true and an agent wallet key is configured. Prefer preparing an unsigned transaction and signing it in your own wallet.",
     {
       direction: z.enum(["BUY_CARDS", "SELL_CARDS"]).describe("'BUY_CARDS' (swap USDC -> CARDS) or 'SELL_CARDS' (swap CARDS -> USDC)"),
       amount: z.number().positive().describe("Amount of input token to swap"),
       slippagePercent: z.number().min(0.05).max(3.0).optional().default(0.5).describe("Max allowed slippage (0.05% to 3.0%, default 0.5% to protect against MEV frontrunning)")
     },
     async (args: any) => {
-      const privateKey = (process.env.AGENT_PRIVATE_KEY || process.env.SOLANA_PRIVATE_KEY || "").trim();
-      if (!privateKey) {
+      const autonomousSigningEnabled = process.env.ENABLE_AUTONOMOUS_SIGNING === "true";
+      const privateKey = autonomousSigningEnabled
+        ? (process.env.AGENT_PRIVATE_KEY || process.env.SOLANA_PRIVATE_KEY || "").trim()
+        : "";
+      if (!autonomousSigningEnabled || !privateKey) {
         return {
           content: [{
             type: "text",
             text: JSON.stringify({
               status: "AUTONOMOUS_SIGNING_NOT_CONFIGURED",
-              message: "No AGENT_PRIVATE_KEY or SOLANA_PRIVATE_KEY is set in environment. Use `prepare_swap_cards` to generate the unsigned transaction, sign with your wallet, and submit via `submit_token_swap`.",
+              message: "Autonomous signing is disabled by default. To enable it, explicitly set ENABLE_AUTONOMOUS_SIGNING=true and configure a dedicated low-balance agent wallet. Safer alternative: use prepare_swap_cards, sign with your own wallet, and submit via submit_token_swap.",
               alternative: "Call prepare_swap_cards instead."
             }, null, 2)
           }],
