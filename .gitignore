@@ -1,9 +1,10 @@
 node_modules/
 *.log
 .env
+.env.*
+!.env.example
 .DS_Store
 Thumbs.db
 data/*.json
 data/*.tmp
 !data/.gitkeep
-
