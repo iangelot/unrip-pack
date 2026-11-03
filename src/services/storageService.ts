@@ -44,7 +44,7 @@ export class StorageService {
       if (fs.existsSync(this.dataFilePath)) {
         const raw = fs.readFileSync(this.dataFilePath, "utf-8");
         const parsed = JSON.parse(raw);
-        console.log(`[StorageService] Loaded persistent state from ${this.dataFilePath}`);
+        console.log("[StorageService] Loaded persistent state.");
         // Legacy versions stored these histories globally. Discard those rows
         // instead of attributing one wallet's activity to every connected user.
         return {
