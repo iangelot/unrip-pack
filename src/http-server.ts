@@ -61,9 +61,22 @@ export interface PendingTransaction {
 export function startHttpServer(port: number = 3000) {
   const app = express();
 
-  // Enable comprehensive CORS for Claude, ChatGPT, PayBox, and web browsers
+  // Restrict browser CORS to explicitly configured client origins.
+  // Requests without an Origin header (for example, server-to-server MCP clients) remain supported.
+  const allowedOrigins = new Set(
+    (process.env.CORS_ALLOWED_ORIGINS || "https://claude.ai,https://chatgpt.com,https://chat.openai.com")
+      .split(",")
+      .map((origin) => origin.trim())
+      .filter(Boolean)
+  );
   app.use(cors({
-    origin: "*",
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.has(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Origin not allowed by CORS"));
+      }
+    },
     methods: ["GET", "POST", "OPTIONS", "HEAD"],
     allowedHeaders: [
       "Content-Type",
@@ -296,7 +309,7 @@ export function startHttpServer(port: number = 3000) {
         return;
       }
 
-      console.log(`[Phantom Mobile] Authenticated wallet: ${userWalletAddress}`);
+      console.log("[Phantom Mobile] Wallet authentication completed.");
       await sharedAccountService.connectWallet(userWalletAddress, true);
 
       createAndRedirectCode(
