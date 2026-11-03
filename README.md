@@ -1,107 +1,71 @@
-# Collector Crypt & Solana Trading Agent (MCP)
+# Unrip Pack — Collector Crypt & Solana MCP
 
-This Model Context Protocol (MCP) server provides autonomous AI agents (Claude, Cursor, etc.) with live access to **Collector Crypt Gacha packs**, on-chain **Solana NFT & token portfolio balances**, and real-time **DEX token swaps via Jupiter Aggregator v6**.
+This Model Context Protocol (MCP) server connects compatible AI clients to Collector Crypt pack data, Solana wallet information, and supported transaction-preparation flows.
 
-It is 100% self-contained—it requires **no secondary MCPs**, no PayBox subscriptions, and no paid API keys.
+> **Security notice:** This software can prepare blockchain transactions. Review every transaction in your wallet before signing. Do not use a wallet holding significant funds until you have independently reviewed and tested the code.
 
----
+## Capabilities
 
-## Capabilities Overview
+| Feature | Description |
+|---|---|
+| Gacha data | Reads machine, pack, price, stock, and odds information from Collector Crypt. |
+| Pack operations | Prepares supported purchase, opening, and buyback flows. |
+| Solana portfolio | Reads supported token balances and NFT metadata. |
+| Jupiter swaps | Retrieves swap quotes and prepares supported swap transactions. |
+| Wallet authorization | Supports OAuth 2.1 and Sign-In with Solana (SIWS) for compatible browser wallets. |
+| Optional autonomous signing | The server contains an optional environment-configured signing path. See the security section before enabling it. |
 
-| Feature | Status | Implementation |
-| :--- | :---: | :--- |
-| **Gacha Machines & Live Odds** | 🟢 **Live** | Reads live machine configs, active stock, prices, and drop odds directly from Collector Crypt (`/api/machines`). |
-| **Pack Purchase** | 🟢 **Live** | Prepares real Solana transactions via Collector Crypt API (`/api/generatePack`). Supports autonomous 1-click execution or wallet signature. |
-| **Pack Opening** | 🟢 **Live** | Opens purchased packs by official memo via Collector Crypt (`/api/openPack`) to assign won collectibles. |
-| **Pack Buybacks (Selling back)** | 🟢 **Live** | Checks real-time buyback eligibility (`/api/buyback/available`) and builds on-chain settlement transactions (`/api/buyback`). |
-| **DEX Token Swaps ($CARDS / USDC / SOL)** | 🟢 **Live** | Real-time quote routing, price impact, and transaction building via **Jupiter Aggregator v6** with 0 protocol fees. |
-| **Wallet Portfolio & Balances** | 🟢 **Live** | Live SOL, USDC, and $CARDS balances via Solana RPC. Scans standard Token & Token-2022 NFTs with Metaplex metadata. |
-| **Autonomous Agent Wallet** | 🟢 **Live** | If `AGENT_PRIVATE_KEY` or `SOLANA_PRIVATE_KEY` is configured in environment, the agent signs and executes swaps and purchases autonomously. |
-| **Web Authorization Portal** | 🟢 **Live** | Built-in OAuth 2.1 & Sign-In with Solana (SIWS) for browser wallets (Phantom, Solflare). |
+Feature availability depends on the upstream services, deployment configuration, and wallet permissions.
 
----
+## Deployment configuration
 
-## Live Endpoints (Render)
+Do not publish deployment URLs, private service endpoints, or environment values unless you intentionally want them public. Configure your own deployment URL in your MCP client using the URL supplied by your hosting provider.
 
-The service is deployed on Render:
-* **Streamable HTTP (Claude Connector spec)**: `https://paybox-collectorcrypt-mcp.onrender.com/mcp`
-* **Legacy SSE Endpoint**: `https://paybox-collectorcrypt-mcp.onrender.com/sse`
-* **Health Check**: `https://paybox-collectorcrypt-mcp.onrender.com/health`
-* **Wallet Authorization Portal**: `https://paybox-collectorcrypt-mcp.onrender.com/oauth/authorize`
+The source repository does not require you to publish a live deployment hostname.
 
----
+## Connecting an MCP client
 
-## How to Connect to AI Clients
+For a local installation, build the project and configure your MCP client to launch the generated entry point. Use the environment variables documented by the application only when you understand their security implications.
 
-### 1. Claude Desktop / Cursor (Stdio Mode)
-Add to your `claude_desktop_config.json`:
+Example configuration (placeholders only):
+
 ```json
 {
   "mcpServers": {
-    "collector-crypt": {
+    "unrip-pack": {
       "command": "node",
-      "args": ["<path-to-repo>/dist/index.js"],
-      "env": {
-        "SOLANA_RPC_URL": "https://api.mainnet-beta.solana.com",
-        "AGENT_PRIVATE_KEY": "<optional-base58-solana-private-key>"
-      }
+      "args": ["<absolute-path-to-repo>/dist/index.js"]
     }
   }
 }
 ```
 
-### 2. Remote / Web (Claude.ai Custom Connector)
-* **Server URL**: `https://paybox-collectorcrypt-mcp.onrender.com/mcp`
-* **Authentication**: OAuth 2.1 (Auto-discovered via `/.well-known/oauth-authorization-server`)
+Do not add real private keys, API tokens, passwords, or wallet seed phrases to this file if it may be shared or committed.
 
----
+## Security-critical signing configuration
 
-## Key MCP Tools
+The application recognizes `AGENT_PRIVATE_KEY` and `SOLANA_PRIVATE_KEY` as optional environment variables. If a valid key is supplied to the running server, the application can sign transactions using that wallet.
 
-### Gacha Pack Operations
-* `get_pack_drops`: List active live Gacha machines, current USDC prices, and rarity drop odds.
-* `get_trending_packs`: View recent winning pulls on Collector Crypt.
-* `get_collector_crypt_pack_status`: Check confirmation and reward status of any pack by its memo.
-* `prepare_collector_crypt_pack_purchase`: Reserve a memo and get an unsigned Solana transaction for any live machine.
-* `execute_collector_crypt_pack_purchase`: 1-step autonomous pack purchase (when `AGENT_PRIVATE_KEY` is configured).
-* `open_collector_crypt_pack`: Open a confirmed pack to reveal and mint the won collectible NFT to your wallet.
-* `prepare_collector_crypt_buyback`: Get instant buyback quotes and build the sellback transaction for eligible pack wins.
-* `submit_collector_crypt_transaction`: Submit signed transactions to Collector Crypt's broadcaster.
+- Never put either variable's **value** in source code, a committed `.env` file, a public issue, or an AI prompt.
+- Store secrets only in a trusted deployment secret manager or a local untracked environment file.
+- Autonomous signing is high risk: anyone who compromises the running process or its secret store may be able to use that wallet.
+- Prefer a dedicated, low-balance wallet with narrowly limited funds.
+- If you do not explicitly need autonomous signing, do not configure either variable.
+- Review transaction contents and destinations before approving wallet signatures.
 
-### Jupiter DEX Token Swaps
-* `get_swap_quote`: Real-time quote for swapping USDC <-> $CARDS (or SOL) with exact output and route.
-* `prepare_swap_cards`: Generate a serialized Solana VersionedTransaction for the swap.
-* `submit_token_swap`: Broadcast a signed swap transaction directly to Solana RPC.
-* `execute_token_swap`: 1-step autonomous swap (when `AGENT_PRIVATE_KEY` is configured).
-
-### Balances & Portfolio
-* `get_user_balances`: Real-time SOL, USDC, and $CARDS balances from Solana RPC.
-* `get_wallet_nft_inventory`: On-chain Token and Token-2022 NFT holdings with Metaplex metadata.
-* `get_portfolio_summary`: Consolidated token and NFT portfolio summary.
-* `update_spend_limits`: Configure safety ceilings ($ per transaction, daily spend caps).
-
----
-
-## Development & Testing
+## Development and testing
 
 ```bash
-# Install dependencies
 npm install
-
-# Run TypeScript compilation
 npm run build
-
-# Run Collector Crypt live API tests
 npm run test:collector-api
-
-# Run component and portfolio integration tests
 npm run test:client
 ```
 
----
+Run tests in a safe development environment and verify the results against the exact commit you intend to deploy. A successful build is not a security audit.
 
-## Security & Guardrails
+## Security reporting
 
-1. **Spend Limits**: Built-in enforcement of maximum per-transaction caps and daily limits.
-2. **Key Safety**: Private keys are never exposed in tool responses or logged.
-3. **Transaction Validation**: The server validates that signed transaction messages match prepared transactions before broadcasting.
+Please do not publish secrets in GitHub issues. If you discover a vulnerability, report it privately to the repository maintainer.
+
+The `auditor/` page is informational documentation only; it does not run a live audit or certify the security of this project.
