@@ -23,7 +23,10 @@ export class AccountService {
     this.solanaService = solanaService;
     const now = new Date().toISOString();
 
-    const envKey = (process.env.AGENT_PRIVATE_KEY || process.env.SOLANA_PRIVATE_KEY || "").trim();
+    const autonomousSigningEnabled = process.env.ENABLE_AUTONOMOUS_SIGNING === "true";
+    const envKey = autonomousSigningEnabled
+      ? (process.env.AGENT_PRIVATE_KEY || process.env.SOLANA_PRIVATE_KEY || "").trim()
+      : "";
     let initialAddress = "";
     let isOwner = false;
     let via: UserAccount["connectedVia"] = "Default Agent Session";
