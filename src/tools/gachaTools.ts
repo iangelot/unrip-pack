@@ -164,7 +164,7 @@ export function registerGachaTools(
           memo: generated.memo,
           unsignedTransactionBase64: generated.transaction,
           signingInstructions: "Sign this transaction using your connected Solana wallet (e.g. Phantom, Solflare, or Solana CLI).",
-          nextStep: "Pass the complete signed base64 transaction and memo to submit_collector_crypt_transaction. Alternatively, configure AGENT_PRIVATE_KEY in environment to execute autonomously."
+          nextStep: "Pass the complete signed base64 transaction and memo to submit_collector_crypt_transaction. Autonomous signing requires ENABLE_AUTONOMOUS_SIGNING=true and a dedicated low-balance agent wallet."
         });
       } catch (error) {
         return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
@@ -174,21 +174,24 @@ export function registerGachaTools(
 
   server.tool(
     "execute_collector_crypt_pack_purchase",
-    "Autonomously purchase a Collector Crypt Gacha pack on Solana. Requires AGENT_PRIVATE_KEY or SOLANA_PRIVATE_KEY in environment variables. Prepares, signs, and submits the transaction autonomously in one step.",
+    "Purchase a Collector Crypt Gacha pack. Autonomous signing is disabled unless ENABLE_AUTONOMOUS_SIGNING=true and an agent wallet key is configured. Prefer preparing an unsigned transaction and signing it in your own wallet.",
     {
       packType: z.string().min(1).max(80).describe("Live Collector Crypt machine code, such as pokemon_50"),
       expectedPriceUsdc: z.number().positive().describe("Current live machine price agreed to pay"),
       turbo: z.boolean().optional().default(false).describe("If true, Collector Crypt automatically buys back Common wins")
     },
     async (args: any) => {
-      const privateKey = (process.env.AGENT_PRIVATE_KEY || process.env.SOLANA_PRIVATE_KEY || "").trim();
-      if (!privateKey) {
+      const autonomousSigningEnabled = process.env.ENABLE_AUTONOMOUS_SIGNING === "true";
+      const privateKey = autonomousSigningEnabled
+        ? (process.env.AGENT_PRIVATE_KEY || process.env.SOLANA_PRIVATE_KEY || "").trim()
+        : "";
+      if (!autonomousSigningEnabled || !privateKey) {
         return {
           content: [{
             type: "text",
             text: JSON.stringify({
               status: "AUTONOMOUS_SIGNING_NOT_CONFIGURED",
-              message: "No AGENT_PRIVATE_KEY or SOLANA_PRIVATE_KEY set in environment. Use prepare_collector_crypt_pack_purchase, sign the transaction with your wallet, and submit via submit_collector_crypt_transaction.",
+              message: "Autonomous signing is disabled by default. To enable it, explicitly set ENABLE_AUTONOMOUS_SIGNING=true and configure a dedicated low-balance agent wallet. Safer alternative: prepare the transaction, sign it in your own wallet, and submit it via submit_collector_crypt_transaction.",
               alternative: "Call prepare_collector_crypt_pack_purchase instead."
             }, null, 2)
           }],
