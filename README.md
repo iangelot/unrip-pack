@@ -16,7 +16,7 @@ It is 100% self-contained—it requires **no secondary MCPs**, no PayBox subscri
 | **Pack Buybacks (Selling back)** | 🟢 **Live** | Checks real-time buyback eligibility (`/api/buyback/available`) and builds on-chain settlement transactions (`/api/buyback`). |
 | **DEX Token Swaps ($CARDS / USDC / SOL)** | 🟢 **Live** | Real-time quote routing, price impact, and transaction building via **Jupiter Aggregator v6** with 0 protocol fees. |
 | **Wallet Portfolio & Balances** | 🟢 **Live** | Live SOL, USDC, and $CARDS balances via Solana RPC. Scans standard Token & Token-2022 NFTs with Metaplex metadata. |
-| **Autonomous Agent Wallet** | 🟢 **Live** | If `AGENT_PRIVATE_KEY` or `SOLANA_PRIVATE_KEY` is configured in environment, the agent signs and executes swaps and purchases autonomously. |
+| **Autonomous Agent Wallet** | 🟠 **Opt-in** | Disabled by default. Requires `ENABLE_AUTONOMOUS_SIGNING=true` plus a dedicated, low-balance agent wallet key. |
 | **Web Authorization Portal** | 🟢 **Live** | Built-in OAuth 2.1 & Sign-In with Solana (SIWS) for browser wallets (Phantom, Solflare). |
 
 ---
@@ -24,10 +24,10 @@ It is 100% self-contained—it requires **no secondary MCPs**, no PayBox subscri
 ## Live Endpoints (Render)
 
 The service is deployed on Render:
-* **Streamable HTTP (Claude Connector spec)**: `https://paybox-collectorcrypt-mcp.onrender.com/mcp`
-* **Legacy SSE Endpoint**: `https://paybox-collectorcrypt-mcp.onrender.com/sse`
-* **Health Check**: `https://paybox-collectorcrypt-mcp.onrender.com/health`
-* **Wallet Authorization Portal**: `https://paybox-collectorcrypt-mcp.onrender.com/oauth/authorize`
+* **Streamable HTTP (Claude Connector spec)**: `<YOUR_DEPLOYMENT_URL>/mcp`
+* **Legacy SSE Endpoint**: `<YOUR_DEPLOYMENT_URL>/sse`
+* **Health Check**: `<YOUR_DEPLOYMENT_URL>/health`
+* **Wallet Authorization Portal**: `<YOUR_DEPLOYMENT_URL>/oauth/authorize`
 
 ---
 
@@ -51,7 +51,7 @@ Add to your `claude_desktop_config.json`:
 ```
 
 ### 2. Remote / Web (Claude.ai Custom Connector)
-* **Server URL**: `https://paybox-collectorcrypt-mcp.onrender.com/mcp`
+* **Server URL**: `<YOUR_DEPLOYMENT_URL>/mcp`
 * **Authentication**: OAuth 2.1 (Auto-discovered via `/.well-known/oauth-authorization-server`)
 
 ---
@@ -102,6 +102,8 @@ npm run test:client
 
 ## Security & Guardrails
 
+**Security status:** This project has not been independently audited. The included auditor page is informational only and does not perform live vulnerability tests. Do not use it as evidence that the server is secure or production-ready.
+
 1. **Spend Limits**: Built-in enforcement of maximum per-transaction caps and daily limits.
-2. **Key Safety**: Private keys are never exposed in tool responses or logged.
-3. **Transaction Validation**: The server validates that signed transaction messages match prepared transactions before broadcasting.
+2. **Key Safety**: Autonomous signing is disabled by default. If explicitly enabled, keys must be stored only as deployment secrets and must belong to a dedicated low-balance wallet—not a personal or treasury wallet.
+3. **Transaction Validation**: Review every transaction in your wallet before signing. Do not treat a successful tool response as an independent security audit.
